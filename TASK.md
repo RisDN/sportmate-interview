@@ -20,7 +20,7 @@ These are the parts we would like to see working when we review the task togethe
 
 ### 1. Synchronization target
 
-A user should be able to add a GitHub username or organization and save it locally with basic validation. [vajon egy github app-ot kellene integrálni, aminek a credentialjeit elmentjuk a db-ben "sources"-ként, vagy egy sima string mint username/org]
+A user should be able to add a GitHub username or organization and save it locally with basic validation. [vajon egy github app-ot kellene integrálni, aminek a credentialjeit elmentjuk a db-ben "sources"-ként, vagy egy sima string mint username/org. a "github username or org" miatt az utobbira asszocialok, de ettol fuggetlenul elmenthetjuk oket sources-kent]
 
 Store enough information to support the synchronization flow. Suggested fields include:
 
@@ -179,3 +179,7 @@ You do not need to implement every topic below. We may ask you to demonstrate th
 - Weaknesses, shortcuts, unfinished parts, and AI-generated code
 
 We may also ask you to make one small change, debug a simple issue, or talk through a realistic failure scenario. We are interested in how you think and work with the code, not in framework trivia.
+
+# tovább fejlesztési ötletek
+
+- Github App / Webhook integráció privát repositorykhoz, illetve megfelelő callbackek az apitól a változások esetén. Azok a repositoryk amikhez van webhook callback, a syncet nem kell futtatni, csak akkor ha szól a github arról, hogy mi változott és ilyenkor is csak azt frissítjük, ami változott, nem pedig mindent. Az összekötetés sikeressége után még csinálunk egy teljes syncet, hogy ne legyen hiányos adatunk ha a legutolsó snyc és az összeköttetés között valami változott volna.
