@@ -182,4 +182,4 @@ We may also ask you to make one small change, debug a simple issue, or talk thro
 
 # tovább fejlesztési ötletek
 
-- Github App / Webhook integráció privát repositorykhoz, illetve megfelelő callbackek az apitól a változások esetén. Azok a repositoryk amikhez van webhook callback, a syncet nem kell futtatni, csak akkor ha szól a github arról, hogy mi változott és ilyenkor is csak azt frissítjük, ami változott, nem pedig mindent. Az összekötetés sikeressége után még csinálunk egy teljes syncet, hogy ne legyen hiányos adatunk ha a legutolsó snyc és az összeköttetés között valami változott volna.
+- Github App / Webhook integráció privát repositorykhoz, illetve megfelelő callbackek az apitól a változások esetén. Azok a repositoryk amikhez van webhook callback, a syncet nem kell futtatni, csak akkor ha szól a github arról, hogy mi változott és ilyenkor is csak azt frissítjük, ami változott, nem pedig mindent. Az összekötetés sikeressége után még csinálunk egy teljes syncet, hogy ne legyen hiányos adatunk ha a legutolsó snyc és az összeköttetés között valami változott volna. [https://chatgpt.com/share/6abe5889-8f98-83eb-ba93-7fadda000269]
