@@ -20,7 +20,7 @@ These are the parts we would like to see working when we review the task togethe
 
 ### 1. Synchronization target
 
-A user should be able to add a GitHub username or organization and save it locally with basic validation.
+A user should be able to add a GitHub username or organization and save it locally with basic validation. [vajon egy github app-ot kellene integrálni, aminek a credentialjeit elmentjuk a db-ben "sources"-ként, vagy egy sima string mint username/org]
 
 Store enough information to support the synchronization flow. Suggested fields include:
 
@@ -32,7 +32,7 @@ Store enough information to support the synchronization flow. Suggested fields i
 
 ### 2. GitHub integration boundary
 
-Retrieve public repositories through a dedicated integration class, client, or service.
+Retrieve public repositories through a dedicated integration class, client, or service. [egy absztrakt interface-t kellene csinalni, ami nem konkrét github specifikus. a konkret github impl-t azt majd egy kulon classban implementaljuk, igy bekotheto barmilyen git provider]
 
 ### 3. Local repository storage
 
@@ -47,7 +47,7 @@ Store a useful subset of the repository data locally. Suggested fields include:
 
 The sync should create new repositories, update ones we already know about, and prevent duplicates with an appropriate database constraint.
 
-You do not need to fully solve what happens when a repository disappears from GitHub. A short note about how you would handle it is enough.
+You do not need to fully solve what happens when a repository disappears from GitHub. A short note about how you would handle it is enough. [megjelöljük deletednek, de nem töröljük. a későbbi syncek során skippeljük]
 
 ### 4. Queued synchronization
 
