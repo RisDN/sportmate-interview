@@ -20,7 +20,7 @@ These are the parts we would like to see working when we review the task togethe
 
 ### 1. Synchronization target
 
-A user should be able to add a GitHub username or organization and save it locally with basic validation. [vajon egy github app-ot kellene integrálni, aminek a credentialjeit elmentjuk a db-ben "sources"-ként, vagy egy sima string mint username/org. a "github username or org" miatt az utobbira asszocialok, de ettol fuggetlenul elmenthetjuk oket sources-kent]
+A user should be able to add a GitHub username or organization and save it locally with basic validation. [vajon egy github app-ot kellene integrálni, aminek a credentialjeit elmentjuk a db-ben "sources"-ként, vagy egy sima string mint username/org. a "github username or org" miatt az utobbira asszocialok, de ettol fuggetlenul elmenthetjuk oket sources-kent. basic validation: nyilvan kliens oldalon a szokasosak, backend oldalon pedig az apit hivjuk, hogy letezik e vagy sem. ezt cacheljuk]
 
 Store enough information to support the synchronization flow. Suggested fields include:
 
