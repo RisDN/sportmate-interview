@@ -98,7 +98,7 @@ onBeforeUnmount(() =>
 
         <div class="flex min-w-0 flex-1 flex-col">
             <header
-                class="flex min-h-20 shrink-0 items-center gap-3 border-b border-line/70 px-5 sm:px-8"
+                class="flex min-h-20 shrink-0 items-center gap-3 px-5 sm:px-8"
             >
                 <button
                     ref="mobileTrigger"
@@ -111,9 +111,6 @@ onBeforeUnmount(() =>
                 >
                     <PhSidebarSimple :size="22" aria-hidden="true" />
                 </button>
-                <span class="text-sm font-medium text-muted">{{
-                    t('page.title')
-                }}</span>
                 <ThemeToggle
                     :theme="theme"
                     class="ml-auto"

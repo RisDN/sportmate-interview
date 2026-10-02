@@ -130,18 +130,8 @@ function clearSearch() {
         </nav>
 
         <div
-            class="flex flex-col gap-3 border-t border-line p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+            class="flex flex-col gap-3 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
         >
-            <p class="text-xs text-muted" aria-live="polite">
-                {{
-                    t(
-                        filteredSources.length === 1
-                            ? 'sidebar.countOne'
-                            : 'sidebar.count',
-                        { count: filteredSources.length },
-                    )
-                }}
-            </p>
             <button
                 ref="createButton"
                 type="button"
@@ -149,7 +139,7 @@ function clearSearch() {
                 @click="$emit('create')"
             >
                 <PhPlus :size="17" weight="bold" aria-hidden="true" />
-                {{ t('sidebar.create') }}
+                {{ t('sidebar.addSource') }}
             </button>
         </div>
     </aside>
