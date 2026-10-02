@@ -13,6 +13,9 @@
 
 - caveman https://www.skills.sh/juliusbrussee/caveman/caveman
 - shadcn https://www.skills.sh/shadcn-ui/ui/shadcn
+- .agents/skills mappában lévők, amik jöttek a laravellel
+- apple-design https://www.skills.sh/emilkowalski/skills/apple-design
+- taste-skill https://www.tasteskill.dev/
 
 # Research-ök
 
