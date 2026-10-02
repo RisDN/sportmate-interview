@@ -1,14 +1,25 @@
 <script setup lang="ts">
-import { PhMagnifyingGlass, PhPlus, PhX } from '@phosphor-icons/vue';
+import {
+    PhCaretLeft,
+    PhCaretRight,
+    PhCircleNotch,
+    PhMagnifyingGlass,
+    PhPlus,
+    PhX,
+} from '@phosphor-icons/vue';
 import { computed, useId, useTemplateRef } from 'vue';
 import GitSourceItem from '@/components/git-sources/GitSourceItem.vue';
+import { getGitProvider } from '@/data/git-providers';
 import { t } from '@/lib/translate';
-import type { GitSource } from '@/types/git-source';
+import type { GitSource, GitSourcePagination } from '@/types/git-source';
 
 const props = withDefaults(
     defineProps<{
         sources: readonly GitSource[];
         selectedId: string | null;
+        pagination: GitSourcePagination | null;
+        loading: boolean;
+        failed: boolean;
         mobile?: boolean;
         headingId?: string;
     }>(),
@@ -16,7 +27,13 @@ const props = withDefaults(
 );
 
 const query = defineModel<string>('query', { required: true });
-defineEmits<{ select: [id: string]; create: []; close: [] }>();
+defineEmits<{
+    select: [id: string];
+    create: [];
+    close: [];
+    page: [page: number];
+    retry: [];
+}>();
 const searchId = useId();
 const searchInput = useTemplateRef<HTMLInputElement>('searchInput');
 const createButton = useTemplateRef<HTMLButtonElement>('createButton');
@@ -26,7 +43,7 @@ defineExpose({ focusCreate: () => createButton.value?.focus() });
 const filteredSources = computed(() => {
     const search = query.value.trim().toLowerCase();
     return props.sources.filter((source) =>
-        `${source.account} ${source.provider.name}`
+        `${source.name} ${source.account} ${getGitProvider(source.provider).name}`
             .toLowerCase()
             .includes(search),
     );
@@ -91,20 +108,51 @@ function clearSearch() {
 
         <nav
             :aria-label="t('sidebar.listLabel')"
+            :aria-busy="loading"
             class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-4"
         >
-            <ul v-if="filteredSources.length" class="flex flex-col gap-1">
+            <div
+                v-if="loading"
+                class="flex items-center justify-center gap-2 py-8 text-sm text-muted"
+                role="status"
+            >
+                <PhCircleNotch
+                    :size="20"
+                    class="animate-spin motion-reduce:animate-none"
+                    aria-hidden="true"
+                />
+                {{ t('sources.loading') }}
+            </div>
+            <div
+                v-if="failed"
+                class="flex flex-col items-center gap-3 px-4 py-5"
+                role="status"
+            >
+                <p class="text-center text-sm text-muted">
+                    {{ t('sources.loadFailed') }}
+                </p>
+                <button
+                    type="button"
+                    class="secondary-button focus-ring"
+                    @click="$emit('retry')"
+                >
+                    {{ t('sources.retry') }}
+                </button>
+            </div>
+            <ul
+                v-if="!loading && filteredSources.length"
+                class="flex flex-col gap-1"
+            >
                 <li v-for="source in filteredSources" :key="source.id">
                     <GitSourceItem
-                        :provider="source.provider"
-                        :account="source.account"
+                        :source="source"
                         :selected="source.id === selectedId"
                         @select="$emit('select', source.id)"
                     />
                 </li>
             </ul>
             <div
-                v-else
+                v-else-if="!loading && !failed"
                 class="flex flex-col gap-2 px-4 py-8 text-center"
                 role="status"
             >
@@ -132,6 +180,49 @@ function clearSearch() {
         <div
             class="flex flex-col gap-3 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
         >
+            <div v-if="pagination" class="flex flex-col gap-2">
+                <p class="text-center text-xs text-muted" role="status">
+                    {{
+                        t('sidebar.count', {
+                            count: filteredSources.length,
+                            total: pagination.total,
+                        })
+                    }}
+                </p>
+                <nav
+                    v-if="pagination.last_page > 1"
+                    class="flex items-center justify-between gap-2"
+                    :aria-label="t('sidebar.pagination')"
+                >
+                    <button
+                        type="button"
+                        class="icon-button focus-ring disabled:cursor-default disabled:opacity-40"
+                        :disabled="loading || pagination.current_page <= 1"
+                        :aria-label="t('sidebar.previous')"
+                        @click="$emit('page', pagination.current_page - 1)"
+                    >
+                        <PhCaretLeft :size="18" aria-hidden="true" />
+                    </button>
+                    <span class="text-xs text-muted">{{
+                        t('sidebar.page', {
+                            page: pagination.current_page,
+                            pages: pagination.last_page,
+                        })
+                    }}</span>
+                    <button
+                        type="button"
+                        class="icon-button focus-ring disabled:cursor-default disabled:opacity-40"
+                        :disabled="
+                            loading ||
+                            pagination.current_page >= pagination.last_page
+                        "
+                        :aria-label="t('sidebar.next')"
+                        @click="$emit('page', pagination.current_page + 1)"
+                    >
+                        <PhCaretRight :size="18" aria-hidden="true" />
+                    </button>
+                </nav>
+            </div>
             <button
                 ref="createButton"
                 type="button"

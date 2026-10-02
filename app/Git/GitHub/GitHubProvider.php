@@ -24,9 +24,20 @@ final class GitHubProvider implements GitProvider
 
     public function __construct(private readonly Factory $http) {}
 
+    public function getKey(): string
+    {
+        return 'github';
+    }
+
     public function getName(): string
     {
         return 'GitHub';
+    }
+
+    public function isValidAccountName(string $name): bool
+    {
+        // GitHub's current signup rules exclude legacy and managed-user names.
+        return preg_match('/\A[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}\z/', $name) === 1;
     }
 
     public function getAccountType(string $name): AccountType
@@ -40,7 +51,7 @@ final class GitHubProvider implements GitProvider
         $account = $this->object($this->decode($this->get(self::BASE_URL.'/users/'.$name)));
         $login = $this->string($account, 'login');
 
-        if (! $this->validName($login)) {
+        if (! $this->isValidAccountName($login)) {
             throw new InvalidResponseException('GitHub returned an invalid account name.', 200);
         }
 
@@ -50,7 +61,30 @@ final class GitHubProvider implements GitProvider
             default => throw new InvalidResponseException('GitHub returned an unsupported account type.', 200),
         };
 
-        return new GitSource($this, $login, $type);
+        $id = $this->integer($account, 'id');
+
+        if ($id === 0) {
+            throw new InvalidResponseException('GitHub returned an invalid account identifier.', 200);
+        }
+
+        $displayName = $account['name'] ?? null;
+
+        if ($displayName !== null && ! is_string($displayName)) {
+            throw new InvalidResponseException('GitHub returned an invalid name field.', 200);
+        }
+
+        $displayName = trim($displayName ?? '');
+        $avatarUrl = $account['avatar_url'] ?? null;
+
+        return new GitSource(
+            provider: $this,
+            name: $login,
+            accountType: $type,
+            remoteId: (string) $id,
+            displayName: $displayName === '' ? $login : $displayName,
+            url: $this->httpsUrl($account['html_url'] ?? null, 'html_url'),
+            avatarUrl: $avatarUrl === null ? null : $this->httpsUrl($avatarUrl, 'avatar_url'),
+        );
     }
 
     /**
@@ -108,16 +142,11 @@ final class GitHubProvider implements GitProvider
     {
         $name = trim($name);
 
-        if (! $this->validName($name)) {
+        if (! $this->isValidAccountName($name)) {
             throw new InvalidArgumentException('A GitHub account name must contain 1 to 39 alphanumeric characters or single hyphens, without a leading or trailing hyphen.');
         }
 
         return $name;
-    }
-
-    private function validName(string $name): bool
-    {
-        return strlen($name) <= 39 && preg_match('/\A[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*\z/', $name) === 1;
     }
 
     private function get(string $url): Response
@@ -263,6 +292,23 @@ final class GitHubProvider implements GitProvider
         }
 
         return $data[$key];
+    }
+
+    private function httpsUrl(mixed $value, string $key): string
+    {
+        if (! is_string($value) || filter_var($value, FILTER_VALIDATE_URL) === false) {
+            throw new InvalidResponseException("GitHub returned an invalid {$key} field.", 200);
+        }
+
+        $url = parse_url($value);
+
+        if ($url === false
+            || ($url['scheme'] ?? null) !== 'https'
+            || isset($url['user']) || isset($url['pass'])) {
+            throw new InvalidResponseException("GitHub returned an invalid {$key} field.", 200);
+        }
+
+        return $value;
     }
 
     /**

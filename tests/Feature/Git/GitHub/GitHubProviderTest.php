@@ -22,18 +22,24 @@ beforeEach(function () {
 
 test('the default provider discovers canonical account names and source getters remain local', function (string $remoteType, AccountType $accountType) {
     Http::fake([
-        'https://api.github.com/users/laravel' => Http::response([
+        'https://api.github.com/users/laravel' => Http::response(GitHubPayload::account([
             'login' => 'Laravel',
             'type' => $remoteType,
-        ]),
+            'name' => 'Laravel Framework',
+        ])),
     ]);
     $provider = app(GitProvider::class);
 
     $source = $provider->getSource('  laravel  ');
 
     expect($provider)->toBeInstanceOf(GitHubProvider::class);
+    expect($provider->getKey())->toBe('github');
     expect($provider->getName())->toBe('GitHub');
     expect($source->getName())->toBe('Laravel');
+    expect($source->getRemoteId())->toBe('958072');
+    expect($source->getDisplayName())->toBe('Laravel Framework');
+    expect($source->getUrl())->toBe('https://github.com/laravel');
+    expect($source->getAvatarUrl())->toBe('https://avatars.githubusercontent.com/u/958072?v=4');
     expect($source->getAccountType())->toBe($accountType);
     expect($source->getProvider())->toBe($provider);
     Http::assertSentCount(1);
@@ -45,8 +51,8 @@ test('the default provider discovers canonical account names and source getters 
 test('account type lookup queries GitHub each time without caching', function () {
     Http::fake([
         'https://api.github.com/users/laravel' => Http::sequence()
-            ->push(['login' => 'laravel', 'type' => 'User'])
-            ->push(['login' => 'laravel', 'type' => 'Organization']),
+            ->push(GitHubPayload::account(['type' => 'User']))
+            ->push(GitHubPayload::account(['type' => 'Organization'])),
     ]);
     $provider = app(GitHubProvider::class);
 
@@ -61,6 +67,7 @@ test('account type lookup queries GitHub each time without caching', function ()
 test('invalid GitHub names are rejected before sending a request', function (string $name) {
     $provider = app(GitHubProvider::class);
 
+    expect($provider->isValidAccountName($name))->toBeFalse();
     expect(fn () => $provider->getSource($name))->toThrow(InvalidArgumentException::class);
 
     Http::assertNothingSent();
@@ -75,22 +82,110 @@ test('invalid GitHub names are rejected before sending a request', function (str
     'trailing hyphen' => 'laravel-',
     'consecutive hyphens' => 'team--name',
     'underscore' => 'team_name',
+    'non-ASCII' => 'árvíz',
+    'embedded newline' => "lara\nvel",
     'too long' => str_repeat('a', 40),
 ]);
 
 test('GitHub account name boundary lengths are accepted', function (string $name) {
     Http::fake([
-        'https://api.github.com/users/'.$name => Http::response(['login' => $name, 'type' => 'User']),
+        'https://api.github.com/users/'.$name => Http::response(GitHubPayload::account(['login' => $name, 'type' => 'User'])),
     ]);
+    $provider = app(GitHubProvider::class);
 
-    $source = app(GitHubProvider::class)->getSource($name);
+    $source = $provider->getSource($name);
 
+    expect($provider->isValidAccountName($name))->toBeTrue();
     expect($source->getName())->toBe($name);
     Http::assertSentCount(1);
 })->with([
     'one character' => 'a',
     'maximum length' => str_repeat('a', 39),
+    'separate hyphens' => 'a-b-c',
+    'mixed case and numbers' => 'A1-B2',
+    'numeric' => '123',
 ]);
+
+test('account name syntax checking stays local and does not normalize surrounding whitespace', function (string $name) {
+    $provider = app(GitProvider::class);
+
+    expect($provider->isValidAccountName($name))->toBeFalse();
+
+    Http::assertNothingSent();
+})->with([
+    'leading space' => ' laravel',
+    'trailing space' => 'laravel ',
+    'trailing newline' => "laravel\n",
+]);
+
+test('missing or blank display names fall back to the canonical login', function (array $nameFields) {
+    $payload = GitHubPayload::account(['login' => 'Laravel']);
+    unset($payload['name']);
+    Http::fake(['https://api.github.com/users/laravel' => Http::response(array_replace($payload, $nameFields))]);
+
+    $source = app(GitProvider::class)->getSource('laravel');
+
+    expect($source->getDisplayName())->toBe('Laravel');
+    Http::assertSentCount(1);
+})->with([
+    'missing name' => [[]],
+    'null name' => [['name' => null]],
+    'empty name' => [['name' => '']],
+    'whitespace name' => [['name' => " \t\n"]],
+]);
+
+test('missing or null avatars remain optional', function (array $avatarFields) {
+    $payload = GitHubPayload::account();
+    unset($payload['avatar_url']);
+    Http::fake(['https://api.github.com/users/laravel' => Http::response(array_replace($payload, $avatarFields))]);
+
+    $source = app(GitProvider::class)->getSource('laravel');
+
+    expect($source->getAvatarUrl())->toBeNull();
+    Http::assertSentCount(1);
+})->with([
+    'missing avatar' => [[]],
+    'null avatar' => [['avatar_url' => null]],
+]);
+
+test('malformed account metadata raises a provider response error', function (string $field, mixed $value) {
+    Http::fake(['https://api.github.com/users/laravel' => Http::response(GitHubPayload::account([$field => $value]))]);
+
+    expect(fn () => app(GitProvider::class)->getSource('laravel'))
+        ->toThrow(InvalidResponseException::class);
+
+    Http::assertSentCount(1);
+})->with([
+    'null ID' => ['id', null],
+    'string ID' => ['id', '958072'],
+    'zero ID' => ['id', 0],
+    'negative ID' => ['id', -1],
+    'fractional ID' => ['id', 1.5],
+    'invalid display name' => ['name', false],
+    'null profile URL' => ['html_url', null],
+    'non-string profile URL' => ['html_url', []],
+    'relative profile URL' => ['html_url', '/laravel'],
+    'insecure profile URL' => ['html_url', 'http://github.com/laravel'],
+    'active profile URL' => ['html_url', 'javascript:alert(1)'],
+    'profile URL credentials' => ['html_url', 'https://user:password@github.com/laravel'],
+    'malformed profile URL' => ['html_url', 'https://'],
+    'non-string avatar' => ['avatar_url', false],
+    'blank avatar' => ['avatar_url', ''],
+    'insecure avatar' => ['avatar_url', 'http://avatars.githubusercontent.com/u/958072'],
+    'active avatar' => ['avatar_url', 'data:image/svg+xml,<svg></svg>'],
+    'avatar credentials' => ['avatar_url', 'https://user:password@avatars.githubusercontent.com/u/958072'],
+]);
+
+test('missing required account metadata raises a provider response error', function (string $field) {
+    $payload = GitHubPayload::account();
+    unset($payload[$field]);
+    Http::fake(['https://api.github.com/users/laravel' => Http::response($payload)]);
+
+    expect(fn () => app(GitProvider::class)->getSource('laravel'))
+        ->toThrow(InvalidResponseException::class);
+
+    Http::assertSentCount(1);
+})->with(['id', 'html_url']);
 
 test('invalid account response fields raise a provider response error', function (array $payload) {
     Http::fake(['https://api.github.com/users/laravel' => Http::response($payload)]);
@@ -100,13 +195,13 @@ test('invalid account response fields raise a provider response error', function
 
     Http::assertSentCount(1);
 })->with([
-    'missing login' => [['type' => 'User']],
-    'non-string login' => [['login' => 123, 'type' => 'User']],
-    'invalid login' => [['login' => 'team/subgroup', 'type' => 'User']],
-    'missing type' => [['login' => 'laravel']],
-    'non-string type' => [['login' => 'laravel', 'type' => false]],
-    'unknown type' => [['login' => 'laravel', 'type' => 'Bot']],
-    'list instead of object' => [[['login' => 'laravel', 'type' => 'User']]],
+    'missing login' => [array_diff_key(GitHubPayload::account(), ['login' => null])],
+    'non-string login' => [GitHubPayload::account(['login' => 123])],
+    'invalid login' => [GitHubPayload::account(['login' => 'team/subgroup'])],
+    'missing type' => [array_diff_key(GitHubPayload::account(), ['type' => null])],
+    'non-string type' => [GitHubPayload::account(['type' => false])],
+    'unknown type' => [GitHubPayload::account(['type' => 'Bot'])],
+    'list instead of object' => [[GitHubPayload::account()]],
 ]);
 
 test('malformed account JSON raises a provider response error', function () {
@@ -128,7 +223,7 @@ test('repository requests use the account endpoint and unauthenticated bounded G
         },
     ]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', $accountType);
+    $source = new GitSource($provider, 'laravel', $accountType, '958072', 'Laravel', 'https://github.com/laravel');
 
     $repositories = $source->getRepositories();
 
@@ -164,7 +259,7 @@ test('repository metadata is mapped to typed GitHub repositories including nulla
         ]),
     ]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', AccountType::Organization);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     $repositories = $provider->getRepositories($source);
 
@@ -199,7 +294,7 @@ test('only owned public repositories are returned while forks and archives remai
         ]),
     ]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', AccountType::Organization);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     $repositories = $provider->getRepositories($source);
 
@@ -211,7 +306,7 @@ test('only owned public repositories are returned while forks and archives remai
 test('a source from another provider instance is rejected without HTTP', function () {
     $provider = app(GitHubProvider::class);
     $otherProvider = new GitHubProvider(app(Factory::class));
-    $source = new GitSource($otherProvider, 'laravel', AccountType::Organization);
+    $source = new GitSource($otherProvider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     expect(fn () => $provider->getRepositories($source))->toThrow(InvalidArgumentException::class);
 
@@ -232,7 +327,7 @@ test('every repository page is read and duplicate repository IDs are removed', f
             ]),
     ]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', AccountType::Organization);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     $repositories = $provider->getRepositories($source);
 
@@ -257,7 +352,7 @@ test('invalid pagination links raise a response error before following them', fu
         'https://api.github.com/orgs/laravel/repos?*' => Http::response([GitHubPayload::repository()], 200, ['Link' => $link]),
     ]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', AccountType::Organization);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     expect(fn () => $provider->getRepositories($source))->toThrow(InvalidResponseException::class);
 
@@ -286,7 +381,7 @@ test('a pagination cycle raises a response error instead of returning a partial 
             ->push([], 200, ['Link' => $next]),
     ]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', AccountType::Organization);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     expect(fn () => $provider->getRepositories($source))->toThrow(InvalidResponseException::class);
 
@@ -302,7 +397,7 @@ test('a 500 on a later page raises an error instead of returning a partial list'
             ->push(['message' => 'Unavailable'], 500),
     ]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', AccountType::Organization);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     expect(fn () => $provider->getRepositories($source))->toThrow(function (GitProviderException $exception) {
         expect($exception->statusCode)->toBe(500);
@@ -318,7 +413,7 @@ test('invalid repository fields raise a response error instead of being coerced'
         ]),
     ]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', AccountType::Organization);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     expect(fn () => $provider->getRepositories($source))->toThrow(InvalidResponseException::class);
 
@@ -346,7 +441,7 @@ test('missing nullable repository fields raise a response error', function (stri
     unset($payload[$field]);
     Http::fake(['https://api.github.com/orgs/laravel/repos?*' => Http::response([$payload])]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', AccountType::Organization);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     expect(fn () => $provider->getRepositories($source))->toThrow(InvalidResponseException::class);
 
@@ -356,7 +451,7 @@ test('missing nullable repository fields raise a response error', function (stri
 test('non-list repository JSON raises a response error rather than an empty success', function (string $body) {
     Http::fake(['https://api.github.com/orgs/laravel/repos?*' => Http::response($body)]);
     $provider = app(GitHubProvider::class);
-    $source = new GitSource($provider, 'laravel', AccountType::Organization);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
 
     expect(fn () => $provider->getRepositories($source))->toThrow(InvalidResponseException::class);
 

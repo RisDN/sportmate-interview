@@ -6,7 +6,11 @@ use App\Git\Exceptions\GitProviderException;
 
 interface GitProvider
 {
+    public function getKey(): string;
+
     public function getName(): string;
+
+    public function isValidAccountName(string $name): bool;
 
     /**
      * Resolve an account's type through the remote provider.

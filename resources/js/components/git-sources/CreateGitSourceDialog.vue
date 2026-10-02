@@ -1,64 +1,146 @@
 <script setup lang="ts">
-import { PhCheck, PhX } from '@phosphor-icons/vue';
-import { computed, ref, useId, useTemplateRef, watch } from 'vue';
+import { useHttp } from '@inertiajs/vue3';
+import { PhCheck, PhCircleNotch, PhX } from '@phosphor-icons/vue';
+import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    ref,
+    useId,
+    useTemplateRef,
+    watch,
+} from 'vue';
+import { store } from '@/actions/App/Http/Controllers/GitSourceController';
 import AppDialog from '@/components/ui/AppDialog.vue';
-import { GitHubProvider } from '@/data/git-sources';
+import AppToast from '@/components/ui/AppToast.vue';
+import { GitHubProvider } from '@/data/git-providers';
+import {
+    apiErrorMessage,
+    errorMessage,
+    isCancelledRequest,
+} from '@/lib/api-errors';
 import { t } from '@/lib/translate';
-import type { GitSource } from '@/types/git-source';
+import type { GitSource, GitSourceResponse } from '@/types/git-source';
 
-const props = defineProps<{ open: boolean; sources: readonly GitSource[] }>();
+const props = defineProps<{ open: boolean; toast: string }>();
 const emit = defineEmits<{
     'update:open': [open: boolean];
     create: [source: GitSource];
+    error: [message: string];
+    dismissToast: [];
 }>();
 
 const id = useId();
 const accountInput = useTemplateRef<HTMLInputElement>('accountInput');
-const account = ref('');
-const touched = ref(false);
-const normalizedAccount = computed(() => account.value.trim());
-
-const error = computed(() => {
-    const name = normalizedAccount.value;
-    if (!name) return t('create.required');
-    if (name.length > 39 || !/^[a-z\d]+(?:-[a-z\d]+)*$/i.test(name)) {
-        return t('create.invalid');
-    }
-    if (
-        props.sources.some(
-            (source) =>
-                source.provider.id === GitHubProvider.id &&
-                source.account.toLowerCase() === name.toLowerCase(),
-        )
-    ) {
-        return t('create.duplicate');
-    }
-    return '';
+const form = useHttp<{ provider: string; account: string }, GitSourceResponse>({
+    provider: GitHubProvider.id,
+    account: '',
 });
+// A separate Precognition request lets transport failures and cancellation use
+// the same error handling as submission, without copying server validation rules.
+const validation = useHttp<{ provider: string; account: string }, null>({
+    provider: GitHubProvider.id,
+    account: '',
+});
+const validating = ref(false);
+const error = computed(() =>
+    form.errors.account ? errorMessage(form.errors.account) : '',
+);
+let validationTimer: ReturnType<typeof setTimeout> | undefined;
+let validationGeneration = 0;
+
+function cancelValidation() {
+    validationGeneration++;
+    clearTimeout(validationTimer);
+    validationTimer = undefined;
+    validation.cancel();
+    validating.value = false;
+}
+
+async function validateAccount() {
+    cancelValidation();
+    if (!props.open || form.processing) return;
+    const generation = validationGeneration;
+    validation.provider = form.provider;
+    validation.account = form.account;
+    validating.value = true;
+
+    try {
+        await validation.post(store.url(), {
+            headers: {
+                Precognition: 'true',
+                'Precognition-Validate-Only': 'account',
+            },
+            onSuccess() {
+                if (generation === validationGeneration)
+                    form.clearErrors('account');
+            },
+            onError(errors) {
+                if (generation !== validationGeneration) return;
+                if (errors.account) form.setError('account', errors.account);
+                if (errors.provider) form.setError('provider', errors.provider);
+            },
+        });
+    } catch (failure) {
+        if (
+            generation === validationGeneration &&
+            !isCancelledRequest(failure)
+        ) {
+            emit('error', apiErrorMessage(failure, 'create.validationFailed'));
+        }
+    } finally {
+        if (generation === validationGeneration) validating.value = false;
+    }
+}
+
+function scheduleValidation() {
+    cancelValidation();
+    form.clearErrors('account');
+    validationTimer = setTimeout(() => void validateAccount(), 400);
+}
 
 watch(
     () => props.open,
     (open) => {
+        cancelValidation();
         if (open) {
-            account.value = '';
-            touched.value = false;
+            form.account = '';
+            form.provider = GitHubProvider.id;
+            form.clearErrors();
         }
     },
 );
 
-function submit() {
-    touched.value = true;
-    if (error.value) {
-        accountInput.value?.focus();
-        return;
+async function submit() {
+    if (form.processing) return;
+    cancelValidation();
+
+    try {
+        await form.post(store.url(), {
+            onSuccess(response) {
+                emit('create', response.data);
+            },
+            onError(errors) {
+                emit(
+                    'error',
+                    errorMessage(
+                        errors.account ?? errors.provider,
+                        'create.failed',
+                    ),
+                );
+            },
+        });
+        if (form.hasErrors) {
+            await nextTick();
+            accountInput.value?.focus();
+        }
+    } catch (failure) {
+        if (!isCancelledRequest(failure))
+            emit('error', apiErrorMessage(failure, 'create.failed'));
     }
-    emit('create', {
-        id: `${GitHubProvider.id}:${normalizedAccount.value.toLowerCase()}`,
-        provider: GitHubProvider,
-        account: normalizedAccount.value,
-    });
-    emit('update:open', false);
 }
+
+onBeforeUnmount(cancelValidation);
 </script>
 
 <template>
@@ -66,11 +148,13 @@ function submit() {
         :open="open"
         :labelledby="`${id}-title`"
         :describedby="`${id}-description`"
+        :close-disabled="form.processing"
         @update:open="emit('update:open', $event)"
     >
         <form
             class="flex flex-col gap-6 p-6 sm:p-7"
             novalidate
+            :aria-busy="form.processing"
             @submit.prevent="submit"
         >
             <div class="flex items-start justify-between gap-4">
@@ -92,6 +176,7 @@ function submit() {
                     type="button"
                     class="icon-button focus-ring -mt-2 -mr-2"
                     :aria-label="t('create.close')"
+                    :disabled="form.processing"
                     @click="emit('update:open', false)"
                 >
                     <PhX :size="19" aria-hidden="true" />
@@ -131,20 +216,20 @@ function submit() {
                 <input
                     :id="`${id}-account`"
                     ref="accountInput"
-                    v-model="account"
+                    v-model="form.account"
+                    name="account"
                     autofocus
                     autocomplete="off"
                     autocapitalize="none"
                     spellcheck="false"
                     type="text"
                     :placeholder="t('create.placeholder')"
-                    :aria-invalid="touched && !!error"
-                    :aria-describedby="`${id}-hint${touched && error ? ` ${id}-error` : ''}`"
-                    :class="[
-                        'text-input',
-                        { 'border-danger': touched && error },
-                    ]"
-                    @blur="touched = true"
+                    :disabled="form.processing"
+                    :aria-invalid="!!error"
+                    :aria-describedby="`${id}-hint${error ? ` ${id}-error` : ''}`"
+                    :class="['text-input', { 'border-danger': error }]"
+                    @input="scheduleValidation"
+                    @blur="validateAccount"
                 />
                 <p
                     :id="`${id}-hint`"
@@ -153,12 +238,24 @@ function submit() {
                     {{ t('create.hint') }}
                 </p>
                 <p
-                    v-if="touched && error"
+                    v-if="error"
                     :id="`${id}-error`"
                     class="text-sm text-danger"
                     role="alert"
                 >
                     {{ error }}
+                </p>
+                <p
+                    v-if="validating"
+                    class="flex items-center gap-2 text-xs text-muted"
+                    role="status"
+                >
+                    <PhCircleNotch
+                        :size="14"
+                        class="animate-spin motion-reduce:animate-none"
+                        aria-hidden="true"
+                    />
+                    {{ t('create.validating') }}
                 </p>
             </div>
 
@@ -166,14 +263,26 @@ function submit() {
                 <button
                     type="button"
                     class="secondary-button focus-ring"
+                    :disabled="form.processing"
                     @click="emit('update:open', false)"
                 >
                     {{ t('create.cancel') }}
                 </button>
-                <button type="submit" class="primary-button focus-ring">
-                    {{ t('create.submit') }}
+                <button
+                    type="submit"
+                    class="primary-button focus-ring disabled:cursor-wait disabled:opacity-70"
+                    :disabled="form.processing"
+                >
+                    <PhCircleNotch
+                        v-if="form.processing"
+                        :size="17"
+                        class="animate-spin motion-reduce:animate-none"
+                        aria-hidden="true"
+                    />
+                    {{ t(form.processing ? 'create.saving' : 'create.submit') }}
                 </button>
             </div>
         </form>
+        <AppToast :message="toast" @dismiss="emit('dismissToast')" />
     </AppDialog>
 </template>

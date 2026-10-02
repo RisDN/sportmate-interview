@@ -1,14 +1,20 @@
 # sportmate-interview
 
 Laravel 13 projekt Vue 3, Inertia 3, TypeScript és Tailwind CSS 4 alappal.
-A kezdőoldalon Git source-ok kereshető oldalsávja, kijelölése és hozzáadó modálja
-próbálható ki GitHub mock adatokkal; a health endpoint: `/up`.
+A kezdőoldalon Git source-ok oldalsávja, kijelölése és hozzáadó modálja érhető el;
+a forrásokat SQLite tárolja, a health endpoint: `/up`.
 
-A source-ok és a kijelölés csak az aktuális oldal memóriájában élnek: újratöltéskor
-visszaállnak a mock adatok, nincs böngészőtárhely vagy szerveroldali mentés, és a
-felület nem indít Git API-hívást. A frontend providerek Vue-komponenst fogadó
-`GitSourceProvider` interface-t követnek
-(`resources/js/types/git-source.ts`). Az angol feliratok a
+Az oldalsáv a REST API-ból egyszerre 10 forrást tölt be, legújabbal kezdve.
+Az oldal egy évig érvényes, titkosított HttpOnly `git_sources_page` cookie-ban
+marad meg. A kereső csak az aktuális oldal elemeit szűri. A kijelölés lapozáskor
+megmarad; újratöltéskor a visszaállított oldal első forrása lesz kijelölve.
+Az adatbázis üresen indul, nincs mock seed. A forrás létrehozásakor a backend
+ellenőrzi a GitHub-fiókot, és elmenti a profiladatait. A repository-k szinkronja
+még nincs bekötve, ezért a `last_synced_at` kezdetben `null`.
+
+A szerializálható `GitSource` típust a `resources/js/types/git-source.ts`
+definiálja; a provider ikonja külön frontend registryben található.
+Az angol feliratok és hibaüzenetek a
 `resources/js/locales/en.ts` szótárban bővíthetők; a típusos `t()` segéd
 (`resources/js/lib/translate.ts`) kulcsokkal és behelyettesíthető paraméterekkel
 adja vissza őket.
@@ -50,7 +56,13 @@ $provider = app(GitProvider::class);
 $source = $provider->getSource('laravel');
 
 $provider->getName();       // 'GitHub'
+$provider->getKey();        // 'github'
+$provider->isValidAccountName('laravel'); // true, HTTP-kérés nélkül
 $source->getName();         // 'laravel'
+$source->getDisplayName();  // megjelenített név, hiányában a kanonikus account
+$source->getRemoteId();     // tartós upstream azonosító
+$source->getUrl();          // profil URL
+$source->getAvatarUrl();    // profilkép URL vagy null
 $source->getAccountType();  // AccountType::Organization, újabb HTTP-kérés nélkül
 $repositories = $source->getRepositories(); // list<RemoteRepository>
 ```
@@ -87,9 +99,38 @@ A HTTP-hibaválaszok státuszát a `statusCode` mező őrzi meg. Hiba esetén ne
 üres vagy részleges repository-listát. Hibás fióknév vagy más providerpéldányhoz
 tartozó source esetén `InvalidArgumentException` keletkezik.
 
-A szerveroldali réteghez nincs külön HTTP-végpont, adatbázistábla vagy
-frontend-bekötés. Tesztjei hálózat és adatbázis nélkül futnak:
+## GitSource REST API
+
+A JSON-végpontok ugyanazon origin alatt, a Laravel `web` middleware és
+CSRF-védelem mellett érhetők el. A forráslista globális; nincs felhasználói
+tulajdon vagy új bejelentkezési folyamat.
+
+- `GET /api/git-sources?page=2`: `data` lista és `meta` objektum
+  (`current_page`, `last_page`, `per_page`, `total`). Oldalparaméter nélkül a
+  mentett cookie érvényesül. A lekérés SQL-szinten lapozott.
+- `POST /api/git-sources`: `{ "provider": "github", "account": "laravel" }`;
+  siker esetén `201` és `{ "data": ... }`. A metadata a provider válaszából jön.
+  Account és upstream ID alapján adatbázisszintű egyediség véd a duplikációtól.
+
+A `StoreGitSourceRequest` közös szabályait a frontend 400 ms késleltetésű
+Precognition-kéréssel használja; nincs második JavaScript-regex vagy kliensoldali
+duplikációellenőrzés. A Precognition nem ment és nem hív GitHubot. A tényleges
+létrehozás egyetlen account-lookupot végez. A provider a szigorú, mai GitHub
+névszintaxist ellenőrzi; régi és enterprise-névkivételeket nem fogad el.
+
+A `422` válasz mezőhibáiban fordítási kulcsok vannak. Működési hibánál `code`
+érkezik: rate limit `429`, hibás provider-válasz `502`, elérhetetlenség `503`,
+váratlan szerverhiba `500`. A frontend a kulcsokat az angol szótárból jeleníti
+meg toastként, validáció esetén mezőhibaként is.
+
+A Wayfinder route-függvényeit a Vite és a `types:check` előtti lépés generálja;
+a generált könyvtárakat nem kell verziókezelni. Meglévő telepítés frissítésekor
+a függőségek telepítése után futtasd a migrációkat és a frontend buildet.
+
+A provider tesztjei hálózat nélkül, az API tesztjei külön SQLite memória-DB-vel
+futnak:
 
 ```sh
 php artisan test --compact tests/Feature/Git
+php artisan test --compact --filter=GitSources
 ```

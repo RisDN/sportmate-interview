@@ -7,8 +7,9 @@ const props = withDefaults(
         labelledby: string;
         describedby?: string;
         variant?: 'modal' | 'sidebar';
+        closeDisabled?: boolean;
     }>(),
-    { variant: 'modal' },
+    { variant: 'modal', closeDisabled: false },
 );
 
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
@@ -28,6 +29,7 @@ watch(
 );
 
 function close() {
+    if (props.closeDisabled) return;
     emit('update:open', false);
 }
 

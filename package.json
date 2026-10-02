@@ -6,9 +6,9 @@
         "build": "vp build",
         "build:ssr": "vp build && vp build --ssr",
         "dev": "vp dev",
-        "check": "vp check",
+        "check": "php artisan wayfinder:generate --no-interaction && vp check",
         "check:fix": "vp check --fix",
-        "types:check": "vue-tsc --noEmit"
+        "types:check": "php artisan wayfinder:generate --no-interaction && vue-tsc --noEmit"
     },
     "dependencies": {
         "@inertiajs/vite": "^3.0.0",
@@ -19,6 +19,7 @@
         "vue": "^3.5.13"
     },
     "devDependencies": {
+        "@laravel/vite-plugin-wayfinder": "^0.1.10",
         "@tailwindcss/vite": "^4.1.11",
         "@types/node": "^22.13.5",
         "@vitejs/plugin-vue": "^6.0.0",

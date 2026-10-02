@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { PhCheck } from '@phosphor-icons/vue';
+import { computed } from 'vue';
+import GitSourceAvatar from '@/components/git-sources/GitSourceAvatar.vue';
+import { getGitProvider } from '@/data/git-providers';
 import { t } from '@/lib/translate';
-import type { GitSourceProvider } from '@/types/git-source';
+import type { GitSource } from '@/types/git-source';
 
-withDefaults(
+const props = withDefaults(
     defineProps<{
-        provider: GitSourceProvider;
-        account: string;
+        source: GitSource;
         selected?: boolean;
     }>(),
     { selected: false },
 );
+
+const provider = computed(() => getGitProvider(props.source.provider));
 
 defineEmits<{ select: [] }>();
 </script>
@@ -19,8 +23,8 @@ defineEmits<{ select: [] }>();
     <button
         type="button"
         :aria-pressed="selected"
-        :aria-label="t('sidebar.select', { name: account })"
-        :title="account"
+        :aria-label="t('sidebar.select', { name: source.name })"
+        :title="source.account"
         :class="[
             'focus-ring flex w-full min-w-0 items-center gap-3 rounded-xl p-3 text-left transition-colors',
             selected
@@ -35,15 +39,15 @@ defineEmits<{ select: [] }>();
                 selected ? 'bg-surface/65' : 'bg-surface',
             ]"
         >
-            <component
-                :is="provider.icon"
-                :size="21"
-                weight="fill"
-                aria-hidden="true"
+            <GitSourceAvatar
+                :provider="source.provider"
+                :url="source.avatar_url"
             />
         </span>
         <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span class="truncate text-sm font-semibold">{{ account }}</span>
+            <span class="truncate text-sm font-semibold">{{
+                source.name
+            }}</span>
             <span
                 :class="[
                     'text-xs',

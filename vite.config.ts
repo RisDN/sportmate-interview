@@ -1,4 +1,5 @@
 import inertia from '@inertiajs/vite';
+import { wayfinder } from '@laravel/vite-plugin-wayfinder';
 import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import laravel from 'laravel-vite-plugin';
@@ -11,6 +12,7 @@ export default defineConfig({
             refresh: true,
         }),
         inertia(),
+        wayfinder(),
         tailwindcss(),
         vue({
             template: {
@@ -38,6 +40,9 @@ export default defineConfig({
             'node_modules/**',
             'public/**',
             'bootstrap/ssr/**',
+            'resources/js/actions/**',
+            'resources/js/routes/**',
+            'resources/js/wayfinder/**',
         ],
         options: {
             denyWarnings: true,
@@ -51,7 +56,15 @@ export default defineConfig({
         semi: true,
         singleAttributePerLine: false,
         htmlWhitespaceSensitivity: 'css',
-        ignorePatterns: ['docs/TASK.md', '.github/**', 'composer.json'],
+        ignorePatterns: [
+            'docs/TASK.md',
+            '.agents/**',
+            '.github/**',
+            'composer.json',
+            'resources/js/actions/**',
+            'resources/js/routes/**',
+            'resources/js/wayfinder/**',
+        ],
         sortTailwindcss: {
             stylesheet: 'resources/css/app.css',
         },

@@ -14,9 +14,19 @@ final class InMemoryGitProvider implements GitProvider
     /** @param list<RemoteRepository> $repositories */
     public function __construct(private readonly array $repositories) {}
 
+    public function getKey(): string
+    {
+        return 'in-memory';
+    }
+
     public function getName(): string
     {
         return 'In-memory Git';
+    }
+
+    public function isValidAccountName(string $name): bool
+    {
+        return $name !== '';
     }
 
     public function getAccountType(string $name): AccountType
@@ -26,7 +36,14 @@ final class InMemoryGitProvider implements GitProvider
 
     public function getSource(string $name): GitSource
     {
-        return new GitSource($this, $name, $this->getAccountType($name));
+        return new GitSource(
+            provider: $this,
+            name: $name,
+            accountType: $this->getAccountType($name),
+            remoteId: '42',
+            displayName: $name,
+            url: 'https://git.example.test/'.$name,
+        );
     }
 
     /** @return list<RemoteRepository> */
