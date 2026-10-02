@@ -33,6 +33,54 @@ export const en = {
     'source.organization': 'Organization',
     'source.lastSync': 'Last sync',
     'source.neverSynced': 'Never synced',
+    'sync.status': 'Synchronization',
+    'sync.idle': 'Not started',
+    'sync.queued': 'Queued',
+    'sync.syncing': 'Syncing repositories',
+    'sync.waiting': 'Waiting to continue',
+    'sync.succeeded': 'Sync complete',
+    'sync.failed': 'Sync failed',
+    'sync.start': 'Sync repositories',
+    'sync.starting': 'Starting sync…',
+    'sync.inProgress': 'Sync in progress',
+    'sync.waitingAction': 'Resumes automatically',
+    'sync.activeHint':
+        'Repositories appear as they are saved. You can leave this page while synchronization continues.',
+    'sync.waitingHint':
+        'Synchronization will continue automatically. Saved repositories remain available.',
+    'sync.retryAt': 'Next attempt',
+    'sync.lastError': 'Latest sync issue',
+    'sync.statusFailed':
+        'Could not refresh the sync status. The last known status is shown.',
+    'sync.startFailed': 'Could not start synchronization. Please try again.',
+    'sync.refresh': 'Refresh status',
+    'repositories.title': 'Repositories',
+    'repositories.count': 'Showing {count} of {total} saved repositories',
+    'repositories.progress': 'The list updates as synchronization progresses.',
+    'repositories.pagination': 'Repository pagination',
+    'repositories.loading': 'Loading repositories…',
+    'repositories.loadFailed': 'Could not load repositories. Please try again.',
+    'repositories.retry': 'Try again',
+    'repositories.empty': 'No repositories saved yet',
+    'repositories.emptyHint':
+        'Sync this source to load its public repositories.',
+    'repositories.emptySynced': 'No public repositories found',
+    'repositories.emptySyncedHint':
+        'This source has no public repositories to display.',
+    'repositories.pending': 'Waiting for repositories',
+    'repositories.pendingHint':
+        'Completed repositories will appear here as they are saved.',
+    'repository.open': 'Open {name} in a new tab',
+    'repository.archived': 'Archived',
+    'repository.noDescription': 'No description provided.',
+    'repository.stars': 'Stars',
+    'repository.forks': 'Forks',
+    'repository.issues': 'Open issues',
+    'repository.pullRequests': 'Open pull requests',
+    'repository.language': 'Language',
+    'repository.noLanguage': 'Not specified',
+    'repository.lastCommit': 'Last commit',
+    'repository.noCommits': 'No commits yet',
     'provider.github': 'GitHub',
     'create.title': 'Create a source',
     'create.description': 'Add a Git username or organization to your sources.',
@@ -60,7 +108,13 @@ export const en = {
         'The Git provider returned an unexpected response. Please try again later.',
     'errors.providerUnavailable':
         'The Git provider could not be reached. Please try again later.',
-    'errors.unexpected': 'Something went wrong. Please try again.',
+    'errors.providerAuthenticationFailed':
+        'The Git provider could not authenticate the request.',
+    'errors.providerAccessDenied':
+        'The Git provider denied access to this resource.',
+    'errors.sourceNotFound':
+        'This source could no longer be found on the Git provider.',
+    'errors.unexpected': 'Unknown issue occurred.',
     'errors.network':
         'The request could not be completed. Check your connection and try again.',
     'errors.sessionExpired':

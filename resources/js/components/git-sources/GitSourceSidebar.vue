@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import {
-    PhCaretLeft,
-    PhCaretRight,
     PhCircleNotch,
     PhMagnifyingGlass,
     PhPlus,
@@ -9,6 +7,7 @@ import {
 } from '@phosphor-icons/vue';
 import { computed, useId, useTemplateRef } from 'vue';
 import GitSourceItem from '@/components/git-sources/GitSourceItem.vue';
+import AppPagination from '@/components/ui/AppPagination.vue';
 import { getGitProvider } from '@/data/git-providers';
 import { t } from '@/lib/translate';
 import type { GitSource, GitSourcePagination } from '@/types/git-source';
@@ -189,39 +188,12 @@ function clearSearch() {
                         })
                     }}
                 </p>
-                <nav
-                    v-if="pagination.last_page > 1"
-                    class="flex items-center justify-between gap-2"
-                    :aria-label="t('sidebar.pagination')"
-                >
-                    <button
-                        type="button"
-                        class="icon-button focus-ring disabled:cursor-default disabled:opacity-40"
-                        :disabled="loading || pagination.current_page <= 1"
-                        :aria-label="t('sidebar.previous')"
-                        @click="$emit('page', pagination.current_page - 1)"
-                    >
-                        <PhCaretLeft :size="18" aria-hidden="true" />
-                    </button>
-                    <span class="text-xs text-muted">{{
-                        t('sidebar.page', {
-                            page: pagination.current_page,
-                            pages: pagination.last_page,
-                        })
-                    }}</span>
-                    <button
-                        type="button"
-                        class="icon-button focus-ring disabled:cursor-default disabled:opacity-40"
-                        :disabled="
-                            loading ||
-                            pagination.current_page >= pagination.last_page
-                        "
-                        :aria-label="t('sidebar.next')"
-                        @click="$emit('page', pagination.current_page + 1)"
-                    >
-                        <PhCaretRight :size="18" aria-hidden="true" />
-                    </button>
-                </nav>
+                <AppPagination
+                    :pagination="pagination"
+                    :loading="loading"
+                    :label="t('sidebar.pagination')"
+                    @page="$emit('page', $event)"
+                />
             </div>
             <button
                 ref="createButton"

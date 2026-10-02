@@ -1,6 +1,8 @@
 <?php
 
 use App\Git\AccountType;
+use App\Git\Exceptions\AccessDeniedException;
+use App\Git\Exceptions\AuthenticationException;
 use App\Git\Exceptions\GitProviderException;
 use App\Git\Exceptions\InvalidResponseException;
 use App\Git\Exceptions\RateLimitException;
@@ -10,6 +12,7 @@ use App\Git\GitHub\GitHubRepository;
 use App\Git\GitProvider;
 use App\Git\GitSource;
 use App\Git\RemoteRepository;
+use App\Git\RepositoryDetails;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
@@ -572,3 +575,296 @@ test('invalid Retry-After values fall back to a valid rate-limit reset timestamp
     'overflowing delay' => (string) PHP_INT_MAX,
     'impossible HTTP date' => 'Fri, 99 Oct 2026 12:03:00 GMT',
 ]);
+
+test('every GitHub endpoint uses the optional PAT without changing public repository scope', function (?string $configuredToken, ?string $expectedToken) {
+    config(['services.github.pat' => $configuredToken]);
+    Http::fake([
+        'https://api.github.com/users/laravel' => Http::response(GitHubPayload::account()),
+        'https://api.github.com/orgs/laravel/repos?*' => Http::response([
+            GitHubPayload::repository(),
+            GitHubPayload::repository(['id' => 124, 'private' => true]),
+        ]),
+        'https://api.github.com/repos/laravel/framework' => Http::response(GitHubPayload::repository()),
+        'https://api.github.com/repos/laravel/framework/pulls?*' => Http::response([]),
+        'https://api.github.com/repos/laravel/framework/commits?per_page=1' => Http::response([]),
+    ]);
+    $provider = app(GitHubProvider::class);
+
+    $source = $provider->getSource('laravel');
+    $page = $provider->getRepositoriesPage($source);
+    $provider->getRepositoryDetails($source, 'framework');
+    $provider->getPullRequestsPage($source, 'framework', 'github:123');
+    $provider->getLastCommitAt($source, 'framework');
+
+    expect(array_column($page->repositories, 'id'))->toBe(['github:123']);
+    expect($provider->getUrlPrefix())->toBe('https://github.com');
+    Http::assertSentCount(5);
+    foreach (Http::recorded() as [$request]) {
+        expect($request->header('Authorization'))->toBe($expectedToken === null ? [] : ['Bearer '.$expectedToken]);
+    }
+    Http::assertSent(fn (Request $request) => str_contains($request->url(), '/orgs/laravel/repos?type=public&'));
+})->with([
+    'configured PAT' => ['  test-pat-value  ', 'test-pat-value'],
+    'missing PAT' => [null, null],
+    'empty PAT' => ['', null],
+    'whitespace PAT' => [" \t\r\n ", null],
+]);
+
+test('invalid credentials and denied access never retry anonymously or expose upstream secrets', function (int $status, string $exceptionClass) {
+    config(['services.github.pat' => 'test-pat-value']);
+    Http::fake(['https://api.github.com/users/laravel' => Http::response(['message' => 'test-pat-value'], $status)]);
+
+    expect(fn () => app(GitHubProvider::class)->getSource('laravel'))->toThrow(function (GitProviderException $exception) use ($status, $exceptionClass) {
+        expect($exception)->toBeInstanceOf($exceptionClass);
+        expect($exception->statusCode)->toBe($status);
+        expect((string) $exception)->not->toContain('test-pat-value');
+    });
+
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request) => $request->hasHeader('Authorization', 'Bearer test-pat-value'));
+})->with([
+    '401 invalid PAT' => [401, AuthenticationException::class],
+    '403 missing access' => [403, AccessDeniedException::class],
+]);
+
+test('authenticated transport failures do not retain a credential-bearing cause', function () {
+    config(['services.github.pat' => 'test-pat-value']);
+    Http::fake(['https://api.github.com/users/laravel' => Http::failedConnection('Transport leaked test-pat-value')]);
+
+    expect(fn () => app(GitHubProvider::class)->getSource('laravel'))->toThrow(function (GitProviderException $exception) {
+        expect($exception->getPrevious())->toBeInstanceOf(ConnectionException::class);
+        expect((string) $exception)->not->toContain('test-pat-value');
+    });
+});
+
+test('a cooldown stops other sources before HTTP while a different authentication context remains usable', function () {
+    $this->travelTo('2026-10-02 12:00:00 UTC');
+    config(['services.github.pat' => null]);
+    Http::fake([
+        'https://api.github.com/users/laravel' => Http::response([], 403, [
+            'X-RateLimit-Remaining' => '0',
+            'X-RateLimit-Reset' => '1790942700',
+        ]),
+        'https://api.github.com/users/octocat' => Http::response(GitHubPayload::account(['login' => 'octocat'])),
+    ]);
+
+    expect(fn () => app(GitHubProvider::class)->getSource('laravel'))->toThrow(RateLimitException::class);
+    expect(fn () => app(GitHubProvider::class)->getSource('octocat'))->toThrow(function (RateLimitException $exception) {
+        expect($exception->retryAt?->format(DATE_ATOM))->toBe('2026-10-02T12:05:00+00:00');
+    });
+    config(['services.github.pat' => 'test-pat-value']);
+    $source = app(GitHubProvider::class)->getSource('octocat');
+
+    expect($source->getName())->toBe('octocat');
+    Http::assertSentCount(2);
+});
+
+test('the last allowed success saves its quota reset and requests resume after that time', function () {
+    $this->travelTo('2026-10-02 12:00:00 UTC');
+    Http::fake(['https://api.github.com/users/laravel' => Http::sequence()
+        ->push(GitHubPayload::account(), 200, ['X-RateLimit-Remaining' => '0', 'X-RateLimit-Reset' => '1790942402'])
+        ->push(GitHubPayload::account())]);
+    $provider = app(GitHubProvider::class);
+
+    $provider->getSource('laravel');
+    expect(fn () => $provider->getSource('laravel'))->toThrow(RateLimitException::class);
+    $this->travelTo('2026-10-02 12:00:03 UTC');
+    $source = $provider->getSource('laravel');
+
+    expect($source->getName())->toBe('laravel');
+    Http::assertSentCount(2);
+});
+
+test('a repository page stops before the next HTTP call and retains its continuation', function () {
+    Http::fake(['https://api.github.com/orgs/laravel/repos?*' => Http::response([GitHubPayload::repository()], 200, [
+        'Link' => '<https://api.github.com/orgs/laravel/repos?page=2>; rel="next"',
+    ])]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    $page = $provider->getRepositoriesPage($source);
+
+    expect(array_column($page->repositories, 'id'))->toBe(['github:123']);
+    expect($page->nextPage)->toBe(2);
+    Http::assertSentCount(1);
+});
+
+test('organization pagination accepts the canonical ID path only for the resolved organization', function () {
+    Http::fake(['https://api.github.com/orgs/laravel/repos?*' => Http::sequence()
+        ->push([GitHubPayload::repository()], 200, ['Link' => '<https://api.github.com/organizations/958072/repos?per_page=100&page=2>; rel="next"'])
+        ->push([], 200)]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    $repositories = $provider->getRepositories($source);
+
+    expect(array_column($repositories, 'id'))->toBe(['github:123']);
+    Http::assertSentCount(2);
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://api.github.com/orgs/laravel/repos?type=public&per_page=100&sort=full_name&direction=asc&page=2');
+});
+
+test('organization pagination never accepts a canonical path belonging to another source', function () {
+    Http::fake(['https://api.github.com/orgs/laravel/repos?*' => Http::response([], 200, [
+        'Link' => '<https://api.github.com/organizations/999/repos?page=2>; rel="next"',
+    ])]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    expect(fn () => $provider->getRepositoriesPage($source))->toThrow(InvalidResponseException::class);
+
+    Http::assertSentCount(1);
+});
+
+test('fresh repository details retain identity ownership and nullable metadata through a durable checkpoint', function () {
+    Http::fake(['https://api.github.com/repos/laravel/framework' => Http::response(GitHubPayload::repository([
+        'description' => null, 'language' => null, 'archived' => true, 'open_issues_count' => 27,
+    ]))]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    $details = $provider->getRepositoryDetails($source, 'framework');
+
+    expect($details->toArray())->toBe([
+        'id' => 'github:123', 'name' => 'framework', 'description' => null, 'stars' => 35000,
+        'forks' => 12000, 'language' => null, 'archived' => true, 'open_issues_count' => 27,
+        'owner_id' => '958072', 'owner_name' => 'laravel', 'is_private' => false,
+    ]);
+    expect(RepositoryDetails::fromArray($details->toArray()))->toEqual($details);
+    Http::assertSentCount(1);
+});
+
+test('pull request pagination proves a total only when the response supports it', function (int $page, int $perPage, int $count, string $link, ?int $total, ?int $nextPage) {
+    $items = array_map(fn (int $id) => ['id' => $id, 'state' => 'open'], $count === 0 ? [] : range(1, $count));
+    Http::fake(['https://api.github.com/repos/laravel/framework/pulls?*' => Http::response($items, 200, ['Link' => $link])]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    $result = $provider->getPullRequestsPage($source, 'framework', 'github:123', $page, $perPage);
+
+    expect($result)->toHaveProperties(['count' => $count, 'total' => $total, 'nextPage' => $nextPage]);
+    Http::assertSentCount(1);
+    Http::assertSent(function (Request $request) use ($page, $perPage) {
+        parse_str(parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        return $query === ['state' => 'open', 'per_page' => (string) $perPage, 'page' => (string) $page];
+    });
+})->with([
+    'empty' => [1, 1, 0, '', 0, null],
+    'one pull request' => [1, 1, 1, '', 1, null],
+    'canonical ID last page' => [1, 1, 1, '<https://api.github.com/repositories/123/pulls?state=open&per_page=1&page=2>; rel="next", <https://api.github.com/repositories/123/pulls?state=open&per_page=1&page=137>; rel="last"', 137, 2],
+    'last link proves the total without a next link' => [1, 1, 1, '<https://api.github.com/repositories/123/pulls?page=137>; rel="last"', 137, 2],
+    'no last page' => [1, 1, 1, '<https://api.github.com/repos/laravel/framework/pulls?page=2>; rel="next"', null, 2],
+    'fallback first page' => [1, 100, 100, '<https://api.github.com/repos/laravel/framework/pulls?per_page=100&page=2>; rel="next"', null, 2],
+    'fallback final page' => [2, 100, 2, '', null, null],
+]);
+
+test('unsafe or inconsistent pull request pagination is rejected without following a link', function (string $link) {
+    Http::fake(['https://api.github.com/repos/laravel/framework/pulls?*' => Http::response([['id' => 1, 'state' => 'open']], 200, ['Link' => $link])]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    expect(fn () => $provider->getPullRequestsPage($source, 'framework', 'github:123'))->toThrow(InvalidResponseException::class);
+
+    Http::assertSentCount(1);
+})->with([
+    'foreign host' => '<https://other.test/repositories/123/pulls?page=2>; rel="next"',
+    'foreign ID' => '<https://api.github.com/repositories/999/pulls?page=2>; rel="next"',
+    'changed state' => '<https://api.github.com/repositories/123/pulls?state=closed&page=2>; rel="next"',
+    'changed page size' => '<https://api.github.com/repositories/123/pulls?per_page=100&page=2>; rel="next"',
+    'overflow' => '<https://api.github.com/repositories/123/pulls?page=99999999999999999999999>; rel="last"',
+    'cycle' => '<https://api.github.com/repositories/123/pulls?page=1>; rel="next"',
+]);
+
+test('the latest commit uses the default branch committer date rather than author or repository metadata', function () {
+    Http::fake(['https://api.github.com/repos/laravel/framework/commits?per_page=1' => Http::response([
+        ['commit' => ['author' => ['date' => '2020-01-01T00:00:00Z'], 'committer' => ['date' => '2026-10-02T12:34:56Z']]],
+    ])]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    $date = $provider->getLastCommitAt($source, 'framework');
+
+    expect($date?->format(DATE_ATOM))->toBe('2026-10-02T12:34:56+00:00');
+    Http::assertSentCount(1);
+});
+
+test('an empty repository has no commit date without becoming a failed synchronization', function (int $status, array $payload) {
+    Http::fake(['https://api.github.com/repos/laravel/framework/commits?per_page=1' => Http::response($payload, $status)]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    expect($provider->getLastCommitAt($source, 'framework'))->toBeNull();
+
+    Http::assertSentCount(1);
+})->with([
+    'empty successful list' => [200, []],
+    'known empty repository response' => [409, ['message' => 'Git Repository is empty.']],
+]);
+
+test('an unrelated commit conflict is not mistaken for an empty repository', function () {
+    Http::fake(['https://api.github.com/repos/laravel/framework/commits?per_page=1' => Http::response(['message' => 'Temporarily unavailable'], 409)]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    expect(fn () => $provider->getLastCommitAt($source, 'framework'))->toThrow(GitProviderException::class);
+
+    Http::assertSentCount(1);
+});
+
+test('invalid commit dates are rejected instead of silently normalized', function (mixed $date) {
+    Http::fake(['https://api.github.com/repos/laravel/framework/commits?per_page=1' => Http::response([
+        ['commit' => ['committer' => ['date' => $date]]],
+    ])]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    expect(fn () => $provider->getLastCommitAt($source, 'framework'))->toThrow(InvalidResponseException::class);
+
+    Http::assertSentCount(1);
+})->with([
+    'impossible day' => '2026-02-30T12:00:00Z',
+    'no timezone' => '2026-10-02T12:00:00',
+    'relative date' => 'tomorrow',
+    'null date' => null,
+    'invalid offset' => '2026-10-02T12:00:00+99:99',
+]);
+
+test('moved repository endpoints become skippable without following credential-bearing redirects', function (string $endpoint, int $status) {
+    config(['services.github.pat' => 'test-private-token']);
+    Http::fake(['https://api.github.com/repos/laravel/framework*' => Http::response([], $status, [
+        'Location' => 'https://untrusted.example/repository',
+    ])]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    expect(fn () => match ($endpoint) {
+        'details' => $provider->getRepositoryDetails($source, 'framework'),
+        'pulls' => $provider->getPullRequestsPage($source, 'framework', 'github:123'),
+        'commits' => $provider->getLastCommitAt($source, 'framework'),
+    })->toThrow(SourceNotFoundException::class, 'The GitHub repository moved.');
+
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.github.com/')
+        && $request->hasHeader('Authorization', 'Bearer test-private-token'));
+})->with(['details', 'pulls', 'commits'])->with([301, 308]);
+
+test('profile and repository discovery redirects remain terminal provider failures', function (string $endpoint) {
+    Http::fake(['https://api.github.com/*' => Http::response([], 301, [
+        'Location' => 'https://api.github.com/users/renamed',
+    ])]);
+    $provider = app(GitHubProvider::class);
+    $source = new GitSource($provider, 'laravel', AccountType::Organization, '958072', 'Laravel', 'https://github.com/laravel');
+
+    try {
+        match ($endpoint) {
+            'profile' => $provider->getSource('laravel'),
+            'repositories' => $provider->getRepositoriesPage($source),
+        };
+        $this->fail('A redirected source must not be accepted.');
+    } catch (GitProviderException $exception) {
+        expect($exception)->not->toBeInstanceOf(SourceNotFoundException::class);
+        expect($exception->statusCode)->toBe(301);
+    }
+
+    Http::assertSentCount(1);
+})->with(['profile', 'repositories']);

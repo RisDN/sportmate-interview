@@ -14,6 +14,7 @@ uses(LazilyRefreshDatabase::class);
 
 beforeEach(function () {
     Http::preventStrayRequests();
+    config(['services.github.pat' => null]);
     $this->withCredentials();
 });
 
@@ -61,7 +62,7 @@ test('the list sorts by creation time and serializes existing synchronization ti
     $response = $this->getJson(route('git-sources.index'));
 
     $response->assertOk()->assertJsonPath('data.0.id', (string) $newer->id)
-        ->assertJsonPath('data.0.last_synced_at', '2026-10-02T12:30:00.000000Z')
+        ->assertJsonPath('data.0.last_synced_at', 1790944200)
         ->assertJsonPath('data.1.last_synced_at', null);
     Http::assertNothingSent();
 });
@@ -125,7 +126,7 @@ test('page preferences use encrypted HttpOnly HTTPS cookies for one year', funct
     expect($cookie->getExpiresTime())->toBe(now()->addDays(365)->getTimestamp());
 });
 
-test('creating a source saves only provider metadata and returns its persisted representation', function (string $remoteType, string $accountType) {
+test('creating a source saves provider metadata and queues its first synchronization', function (string $remoteType, string $accountType) {
     Http::fake(['https://api.github.com/users/laravel' => Http::response(GitHubPayload::account([
         'login' => 'Laravel',
         'type' => $remoteType,
@@ -152,6 +153,11 @@ test('creating a source saves only provider metadata and returns its persisted r
         'avatar_url' => 'https://avatars.githubusercontent.com/u/958072?v=4',
         'account_type' => $accountType,
         'last_synced_at' => null,
+        'sync_status' => 'queued',
+        'last_sync_error_code' => null,
+        'last_sync_error_at' => null,
+        'sync_retry_at' => null,
+        'sync_revision' => $source->sync_revision,
     ]])->assertCookieMissing(GitSourceController::PAGE_COOKIE);
     $this->assertDatabaseHas('git_sources', [
         'id' => $source->id,
@@ -161,6 +167,8 @@ test('creating a source saves only provider metadata and returns its persisted r
         'last_synced_at' => null,
     ]);
     expect($source->account_type)->toBe(AccountType::from($accountType));
+    $this->assertDatabaseCount('jobs', 1);
+    $this->assertDatabaseEmpty('remote_repositories');
     Http::assertSentCount(1);
 })->with([
     'user' => ['User', 'user'],
@@ -204,10 +212,12 @@ test('the same remote account under a new name returns 422 without a duplicate r
     Http::assertSentCount(1);
 });
 
-test('a concurrent duplicate insert returns 422 while preserving the winning row', function () {
+test('an identity collision at insert returns 422 while preserving the winning row', function () {
+    $winner = GitSource::factory()->create(['remote_id' => '123456']);
     Http::fake(['https://api.github.com/users/laravel' => Http::response(GitHubPayload::account())]);
-    GitSource::creating(function (GitSource $source) {
-        DB::table('git_sources')->insert($source->getAttributes());
+    GitSource::creating(function (GitSource $source) use ($winner) {
+        // Simulate a collision after preflight without writing a competing row inside our transaction.
+        $source->remote_id = $winner->remote_id;
     });
 
     try {
@@ -218,7 +228,8 @@ test('a concurrent duplicate insert returns 422 while preserving the winning row
 
     $response->assertUnprocessable()->assertJsonPath('errors.account.0', 'create.duplicate');
     $this->assertDatabaseCount('git_sources', 1);
-    $this->assertDatabaseHas('git_sources', ['remote_id' => '958072']);
+    $this->assertDatabaseHas('git_sources', ['id' => $winner->id, 'remote_id' => '123456']);
+    $this->assertDatabaseEmpty('jobs');
     Http::assertSentCount(1);
 });
 
@@ -248,7 +259,7 @@ test('upstream rate limits return 429 and the retry time without saving', functi
     $response = $this->postJson(route('git-sources.store'), ['provider' => 'github', 'account' => 'laravel']);
 
     $response->assertTooManyRequests()->assertExactJson([
-        'code' => 'errors.rateLimited', 'retry_at' => '2026-10-02T12:02:00+00:00',
+        'code' => 'errors.rateLimited', 'retry_at' => 1790942520,
     ])->assertHeader('Retry-After', '120');
     $this->assertDatabaseEmpty('git_sources');
     Http::assertSentCount(1);

@@ -3,17 +3,24 @@
 namespace App\Git\GitHub;
 
 use App\Git\AccountType;
+use App\Git\Exceptions\AccessDeniedException;
+use App\Git\Exceptions\AuthenticationException;
 use App\Git\Exceptions\GitProviderException;
 use App\Git\Exceptions\InvalidResponseException;
 use App\Git\Exceptions\RateLimitException;
 use App\Git\Exceptions\SourceNotFoundException;
 use App\Git\GitProvider;
 use App\Git\GitSource;
+use App\Git\PullRequestPage;
+use App\Git\RemoteRepository;
+use App\Git\RepositoryDetails;
+use App\Git\RepositoryPage;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 use JsonException;
 use stdClass;
@@ -32,6 +39,11 @@ final class GitHubProvider implements GitProvider
     public function getName(): string
     {
         return 'GitHub';
+    }
+
+    public function getUrlPrefix(): string
+    {
+        return 'https://github.com';
     }
 
     public function isValidAccountName(string $name): bool
@@ -88,54 +100,209 @@ final class GitHubProvider implements GitProvider
     }
 
     /**
-     * @return list<GitHubRepository>
+     * @return list<RemoteRepository>
      */
     public function getRepositories(GitSource $source): array
     {
-        if ($source->getProvider() !== $this) {
-            throw new InvalidArgumentException('The Git source belongs to a different provider instance.');
-        }
+        $page = 1;
+        $repositories = [];
 
-        $name = $this->normalizeName($source->getName());
+        do {
+            $result = $this->getRepositoriesPage($source, $page);
+
+            foreach ($result->repositories as $repository) {
+                $repositories[$repository->id] = $repository;
+            }
+
+            $page = $result->nextPage;
+        } while ($page !== null);
+
+        $repositories = array_values($repositories);
+        usort($repositories, fn (RemoteRepository $left, RemoteRepository $right): int => strcasecmp($left->fullName, $right->fullName) ?: strcmp($left->id, $right->id)
+        );
+
+        return $repositories;
+    }
+
+    public function getRepositoriesPage(GitSource $source, int $page = 1): RepositoryPage
+    {
+        $name = $this->sourceName($source);
+        $this->validatePage($page);
         $organization = $source->getAccountType() === AccountType::Organization;
         $path = ($organization ? '/orgs/' : '/users/').$name.'/repos';
+        $paths = [$path];
+
+        if ($organization && preg_match('/\A[1-9][0-9]*\z/', $source->getRemoteId()) === 1) {
+            $paths[] = '/organizations/'.$source->getRemoteId().'/repos';
+        }
+
         $query = [
             'type' => $organization ? 'public' : 'owner',
             'per_page' => '100',
             'sort' => 'full_name',
             'direction' => 'asc',
         ];
-        $page = 1;
+        $response = $this->get(self::BASE_URL.$path.'?'.http_build_query([...$query, 'page' => $page]));
         $repositories = [];
 
-        do {
-            $url = self::BASE_URL.$path.'?'.http_build_query([...$query, 'page' => $page]);
-            $response = $this->get($url);
-            $items = $this->decode($response);
+        foreach ($this->list($response) as $item) {
+            $data = $this->object($item);
+            $repository = $this->repository($data);
+            $owner = $this->object($data['owner'] ?? null);
 
-            if (! is_array($items) || ! array_is_list($items)) {
-                throw new InvalidResponseException('GitHub returned an invalid repository list.', 200);
+            if (! $this->boolean($data, 'private') && strcasecmp($this->string($owner, 'login'), $name) === 0) {
+                $repositories[$repository->id] = $repository;
             }
+        }
 
-            foreach ($items as $item) {
-                $data = $this->object($item);
-                $repository = $this->repository($data);
-                $owner = $this->object($data['owner'] ?? null);
-                $ownerName = $this->string($owner, 'login');
-
-                if (! $this->boolean($data, 'private') && strcasecmp($ownerName, $name) === 0) {
-                    $repositories[$repository->id] = $repository;
-                }
-            }
-
-            $page = $this->nextPage($response->header('Link'), $path, $query, $page);
-        } while ($page !== null);
-
-        $repositories = array_values($repositories);
-        usort($repositories, fn (GitHubRepository $left, GitHubRepository $right): int => strcasecmp($left->fullName, $right->fullName) ?: strcmp($left->id, $right->id)
+        return new RepositoryPage(
+            repositories: array_values($repositories),
+            nextPage: $this->nextPage($response->header('Link'), $paths, $query, $page),
         );
+    }
 
-        return $repositories;
+    public function getRepositoryDetails(GitSource $source, string $name): RepositoryDetails
+    {
+        $data = $this->object($this->decode($this->get(self::BASE_URL.$this->repositoryPath($source, $name), repositoryRequest: true)));
+        $repository = $this->repository($data);
+        $owner = $this->object($data['owner'] ?? null);
+        $ownerId = $this->integer($owner, 'id');
+        $ownerName = $this->string($owner, 'login');
+
+        if ($ownerId === 0 || ! $this->isValidAccountName($ownerName)) {
+            throw new InvalidResponseException('GitHub returned an invalid repository owner.', 200);
+        }
+
+        return new RepositoryDetails(
+            id: $repository->id,
+            name: $repository->name,
+            description: $repository->description,
+            stars: $repository->stars,
+            forks: $repository->forks,
+            language: $repository->language,
+            archived: $repository->archived,
+            openIssuesCount: $this->integer($data, 'open_issues_count'),
+            ownerId: (string) $ownerId,
+            ownerName: $ownerName,
+            isPrivate: $this->boolean($data, 'private'),
+        );
+    }
+
+    public function getPullRequestsPage(GitSource $source, string $name, string $externalId, int $page = 1, int $perPage = 1): PullRequestPage
+    {
+        $this->validatePage($page);
+
+        if (! in_array($perPage, [1, 100], true) || preg_match('/\Agithub:([1-9][0-9]*)\z/', $externalId, $identity) !== 1) {
+            throw new InvalidArgumentException('Invalid GitHub pull request pagination parameters.');
+        }
+
+        $path = $this->repositoryPath($source, $name).'/pulls';
+        $query = ['state' => 'open', 'per_page' => (string) $perPage];
+        $response = $this->get(self::BASE_URL.$path.'?'.http_build_query([...$query, 'page' => $page]), repositoryRequest: true);
+        $items = $this->list($response);
+
+        if (count($items) > $perPage) {
+            throw new InvalidResponseException('GitHub returned too many pull requests for one page.', 200);
+        }
+
+        foreach ($items as $item) {
+            $pullRequest = $this->object($item);
+
+            if ($this->integer($pullRequest, 'id') === 0 || $this->string($pullRequest, 'state') !== 'open') {
+                throw new InvalidResponseException('GitHub returned an invalid open pull request.', 200);
+            }
+        }
+
+        $links = $this->paginationLinks($response->header('Link'), [$path, '/repositories/'.$identity[1].'/pulls'], $query);
+        $last = $links['last'] ?? null;
+        $next = $links['next'] ?? ($last !== null && $last > $page ? $page + 1 : null);
+
+        if (($next !== null && $next !== $page + 1)
+            || ($last !== null && $last < $page)
+            || ($next !== null && $last !== null && $last < $next)
+            || ($next !== null && count($items) !== $perPage)) {
+            throw new InvalidResponseException('GitHub returned inconsistent pull request pagination.', 200);
+        }
+
+        $total = null;
+
+        if ($page === 1 && $next === null) {
+            $total = count($items);
+        } elseif ($perPage === 1 && $last !== null) {
+            $total = $last;
+        }
+
+        return new PullRequestPage(count($items), $total, $next);
+    }
+
+    public function getLastCommitAt(GitSource $source, string $name): ?DateTimeImmutable
+    {
+        $response = $this->get(self::BASE_URL.$this->repositoryPath($source, $name).'/commits?per_page=1', allowEmptyRepository: true, repositoryRequest: true);
+
+        if ($response->status() === 409) {
+            return null;
+        }
+
+        $items = $this->list($response);
+
+        if ($items === []) {
+            return null;
+        }
+
+        if (count($items) !== 1) {
+            throw new InvalidResponseException('GitHub returned an invalid latest commit list.', 200);
+        }
+
+        $commit = $this->object($this->object($items[0])['commit'] ?? null);
+        $committer = $this->object($commit['committer'] ?? null);
+        $date = $this->string($committer, 'date');
+        $timestamp = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:sP', $date);
+
+        if ($timestamp === false || DateTimeImmutable::getLastErrors() !== false
+            || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)\z/', $date) !== 1) {
+            throw new InvalidResponseException('GitHub returned an invalid commit timestamp.', 200);
+        }
+
+        return $timestamp;
+    }
+
+    private function sourceName(GitSource $source): string
+    {
+        if ($source->getProvider() !== $this) {
+            throw new InvalidArgumentException('The Git source belongs to a different provider instance.');
+        }
+
+        return $this->normalizeName($source->getName());
+    }
+
+    private function repositoryPath(GitSource $source, string $name): string
+    {
+        $owner = $this->sourceName($source);
+
+        if (preg_match('/\A[a-zA-Z0-9._-]{1,100}\z/', $name) !== 1 || in_array($name, ['.', '..'], true)) {
+            throw new InvalidArgumentException('Invalid GitHub repository name.');
+        }
+
+        return '/repos/'.$owner.'/'.rawurlencode($name);
+    }
+
+    private function validatePage(int $page): void
+    {
+        if ($page < 1 || $page === PHP_INT_MAX) {
+            throw new InvalidArgumentException('A GitHub page must be a positive integer.');
+        }
+    }
+
+    /** @return list<mixed> */
+    private function list(Response $response): array
+    {
+        $items = $this->decode($response);
+
+        if (! is_array($items) || ! array_is_list($items)) {
+            throw new InvalidResponseException('GitHub returned an invalid list.', 200);
+        }
+
+        return $items;
     }
 
     private function normalizeName(string $name): string
@@ -149,10 +316,24 @@ final class GitHubProvider implements GitProvider
         return $name;
     }
 
-    private function get(string $url): Response
+    private function get(string $url, bool $allowEmptyRepository = false, bool $repositoryRequest = false): Response
     {
+        $configuredToken = config('services.github.pat');
+        $token = is_string($configuredToken) ? trim($configuredToken) : '';
+
+        if (preg_match('/[\x00-\x20\x7f]/', $token) === 1) {
+            throw new AuthenticationException('GitHub authentication could not be configured.', 401);
+        }
+
+        $cooldownKey = 'github:cooldown:'.hash('sha256', $token === '' ? 'anonymous' : 'pat:'.$token);
+        $retryTimestamp = Cache::get($cooldownKey);
+
+        if (is_int($retryTimestamp) && $retryTimestamp > now()->getTimestamp()) {
+            throw new RateLimitException('The GitHub API rate limit was reached.', (new DateTimeImmutable)->setTimestamp($retryTimestamp), 429);
+        }
+
         try {
-            $response = $this->http->createPendingRequest()
+            $request = $this->http->createPendingRequest()
                 ->withHeaders([
                     'Accept' => 'application/vnd.github+json',
                     'User-Agent' => 'sportmate-interview',
@@ -160,18 +341,51 @@ final class GitHubProvider implements GitProvider
                 ])
                 ->connectTimeout(3)
                 ->timeout(10)
-                ->withoutRedirecting()
-                ->get($url);
+                ->withoutRedirecting();
+
+            if ($token !== '') {
+                $request->withToken($token);
+            }
+
+            $response = $request->get($url);
         } catch (ConnectionException $exception) {
-            throw new GitProviderException('Unable to connect to GitHub.', previous: $exception);
+            // A transport exception can retain a request containing the bearer token.
+            $cause = $token === '' ? $exception : new ConnectionException('Unable to connect to GitHub.');
+
+            throw new GitProviderException('Unable to connect to GitHub.', previous: $cause);
         }
 
         if ($response->status() === 404) {
             throw new SourceNotFoundException('The GitHub source was not found.', 404);
         }
 
+        if ($repositoryRequest && in_array($response->status(), [301, 308], true)) {
+            // Skip names changed since discovery; the next sync discovers the current name.
+            throw new SourceNotFoundException('The GitHub repository moved.', $response->status());
+        }
+
         if ($this->isRateLimited($response)) {
-            throw new RateLimitException('The GitHub API rate limit was reached.', $this->retryAt($response), $response->status());
+            $retryAt = $this->retryAt($response);
+            $this->rememberCooldown($cooldownKey, $retryAt);
+
+            throw new RateLimitException('The GitHub API rate limit was reached.', $retryAt, $response->status());
+        }
+
+        if ($response->status() === 401) {
+            throw new AuthenticationException('GitHub authentication failed.', 401);
+        }
+
+        if ($response->status() === 403) {
+            throw new AccessDeniedException('GitHub denied access to the requested resource.', 403);
+        }
+
+        if ($response->header('X-RateLimit-Remaining') === '0') {
+            $this->rememberCooldown($cooldownKey, $this->retryAt($response));
+        }
+
+        if ($allowEmptyRepository && $response->status() === 409
+            && $response->json('message', flags: 0) === 'Git Repository is empty.') {
+            return $response;
         }
 
         if ($response->status() !== 200) {
@@ -179,6 +393,18 @@ final class GitHubProvider implements GitProvider
         }
 
         return $response;
+    }
+
+    private function rememberCooldown(string $key, ?DateTimeImmutable $retryAt): void
+    {
+        $until = max(now()->getTimestamp() + 1, $retryAt?->getTimestamp() ?? now()->getTimestamp() + 60);
+
+        Cache::lock($key.':lock', 5)->block(1, function () use ($key, $until): void {
+            $existing = Cache::get($key);
+            $until = is_int($existing) ? max($existing, $until) : $until;
+
+            Cache::put($key, $until, (new DateTimeImmutable)->setTimestamp($until));
+        });
     }
 
     private function isRateLimited(Response $response): bool
@@ -340,27 +566,36 @@ final class GitHubProvider implements GitProvider
     }
 
     /**
+     * @param  list<string>  $paths
      * @param  array<string, string>  $query
      */
-    private function nextPage(string $header, string $path, array $query, int $currentPage): ?int
+    private function nextPage(string $header, array $paths, array $query, int $currentPage): ?int
     {
-        if ($header === '') {
-            return null;
+        $nextPage = $this->paginationLinks($header, $paths, $query)['next'] ?? null;
+
+        if ($nextPage !== null && $nextPage !== $currentPage + 1) {
+            throw new InvalidResponseException('GitHub returned a repeated or invalid next page.', 200);
         }
 
-        $nextPage = null;
+        return $nextPage;
+    }
+
+    /**
+     * @param  list<string>  $paths
+     * @param  array<string, string>  $query
+     * @return array<string, int>
+     */
+    private function paginationLinks(string $header, array $paths, array $query): array
+    {
+        if ($header === '') {
+            return [];
+        }
+
+        $links = [];
 
         foreach (explode(',', $header) as $link) {
             if (preg_match('/\A\s*<([^<>\s]+)>\s*;\s*rel="([a-z ]+)"\s*\z/', $link, $matches) !== 1) {
                 throw new InvalidResponseException('GitHub returned a malformed pagination link.', 200);
-            }
-
-            if (! in_array('next', explode(' ', $matches[2]), true)) {
-                continue;
-            }
-
-            if ($nextPage !== null) {
-                throw new InvalidResponseException('GitHub returned multiple next-page links.', 200);
             }
 
             $url = parse_url($matches[1]);
@@ -368,7 +603,7 @@ final class GitHubProvider implements GitProvider
             if ($url === false
                 || ($url['scheme'] ?? null) !== 'https'
                 || ($url['host'] ?? null) !== 'api.github.com'
-                || ($url['path'] ?? null) !== $path
+                || ! in_array($url['path'] ?? null, $paths, true)
                 || isset($url['port']) || isset($url['user']) || isset($url['pass']) || isset($url['fragment'])) {
                 throw new InvalidResponseException('GitHub returned an invalid pagination destination.', 200);
             }
@@ -384,13 +619,19 @@ final class GitHubProvider implements GitProvider
             $page = $parameters['page'] ?? null;
             $number = is_string($page) ? filter_var($page, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) : false;
 
-            if ($number === false || $number !== $currentPage + 1) {
-                throw new InvalidResponseException('GitHub returned a repeated or invalid next page.', 200);
+            if ($number === false || $number === PHP_INT_MAX) {
+                throw new InvalidResponseException('GitHub returned an invalid page number.', 200);
             }
 
-            $nextPage = $number;
+            foreach (explode(' ', $matches[2]) as $relation) {
+                if (isset($links[$relation])) {
+                    throw new InvalidResponseException('GitHub returned duplicate pagination links.', 200);
+                }
+
+                $links[$relation] = $number;
+            }
         }
 
-        return $nextPage;
+        return $links;
     }
 }

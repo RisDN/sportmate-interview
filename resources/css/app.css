@@ -17,6 +17,9 @@
     --color-selection: var(--selection);
     --color-selection-foreground: var(--selection-foreground);
     --color-danger: var(--danger);
+    --color-archive: var(--archive);
+    --color-archive-line: var(--archive-line);
+    --color-archive-surface: var(--archive-surface);
 }
 
 :root {
@@ -33,6 +36,9 @@
     --selection: light-dark(#e1eaff, #293d61);
     --selection-foreground: light-dark(#204fa9, #c1d5ff);
     --danger: light-dark(#bd3039, #ff9a9f);
+    --archive: light-dark(#805400, #e8bd64);
+    --archive-line: light-dark(#bb8b2e, #8c6c2f);
+    --archive-surface: light-dark(#fff6df, #332b1c);
 }
 
 :root[data-theme='light'] {

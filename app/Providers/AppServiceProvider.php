@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Git\GitHub\GitHubProvider;
 use App\Git\GitProvider;
 use Carbon\CarbonImmutable;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
@@ -26,6 +27,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        DevCommands::artisan('queue:listen --tries=0 --timeout=60', 'queue');
     }
 
     /**

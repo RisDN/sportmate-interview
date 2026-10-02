@@ -14,6 +14,10 @@ return [
     |
     */
 
+    'github' => [
+        'pat' => env('GITHUB_PAT'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

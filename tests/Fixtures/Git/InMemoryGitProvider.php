@@ -5,7 +5,12 @@ namespace Tests\Fixtures\Git;
 use App\Git\AccountType;
 use App\Git\GitProvider;
 use App\Git\GitSource;
+use App\Git\PullRequestPage;
 use App\Git\RemoteRepository;
+use App\Git\RepositoryDetails;
+use App\Git\RepositoryPage;
+use DateTimeImmutable;
+use LogicException;
 
 final class InMemoryGitProvider implements GitProvider
 {
@@ -22,6 +27,11 @@ final class InMemoryGitProvider implements GitProvider
     public function getName(): string
     {
         return 'In-memory Git';
+    }
+
+    public function getUrlPrefix(): string
+    {
+        return 'https://git.example.test';
     }
 
     public function isValidAccountName(string $name): bool
@@ -52,5 +62,25 @@ final class InMemoryGitProvider implements GitProvider
         $this->requestedSource = $source;
 
         return $this->repositories;
+    }
+
+    public function getRepositoriesPage(GitSource $source, int $page = 1): RepositoryPage
+    {
+        return new RepositoryPage($page === 1 ? $this->getRepositories($source) : [], null);
+    }
+
+    public function getRepositoryDetails(GitSource $source, string $name): RepositoryDetails
+    {
+        throw new LogicException('Repository details are not configured for this fixture.');
+    }
+
+    public function getPullRequestsPage(GitSource $source, string $name, string $externalId, int $page = 1, int $perPage = 1): PullRequestPage
+    {
+        throw new LogicException('Pull requests are not configured for this fixture.');
+    }
+
+    public function getLastCommitAt(GitSource $source, string $name): ?DateTimeImmutable
+    {
+        throw new LogicException('Commits are not configured for this fixture.');
     }
 }

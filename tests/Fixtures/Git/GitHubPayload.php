@@ -36,9 +36,10 @@ final class GitHubPayload
             'forks_count' => 12000,
             'language' => 'PHP',
             'archived' => false,
+            'open_issues_count' => 12,
             'private' => false,
             'fork' => false,
-            'owner' => ['login' => 'laravel'],
+            'owner' => ['id' => 958072, 'login' => 'laravel'],
         ], $overrides);
     }
 }

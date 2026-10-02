@@ -4,11 +4,13 @@ use App\Git\Exceptions\GitProviderException;
 use App\Git\Exceptions\InvalidResponseException;
 use App\Git\Exceptions\RateLimitException;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Services\GitSyncError;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -26,12 +28,20 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->report(function (Throwable $exception) {
+            if (request()->is('api/git-sources', 'api/git-sources/*')) {
+                Log::error('Git source request failed.', GitSyncError::context($exception));
+
+                return false;
+            }
+        });
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
 
         $exceptions->render(function (GitProviderException $exception, Request $request) {
-            if (! $request->is('api/git-sources')) {
+            if (! $request->is('api/git-sources', 'api/git-sources/*')) {
                 return null;
             }
 
@@ -42,19 +52,17 @@ return Application::configure(basePath: dirname(__DIR__))
 
                 return response()->json([
                     'code' => 'errors.rateLimited',
-                    'retry_at' => $exception->retryAt?->format(DATE_ATOM),
+                    'retry_at' => $exception->retryAt?->getTimestamp(),
                 ], 429, $headers);
             }
 
             return response()->json([
-                'code' => $exception instanceof InvalidResponseException
-                    ? 'errors.providerInvalidResponse'
-                    : 'errors.providerUnavailable',
-            ], $exception instanceof InvalidResponseException ? 502 : 503);
+                'code' => GitSyncError::code($exception),
+            ], $exception instanceof InvalidResponseException || in_array($exception->statusCode, [401, 403], true) ? 502 : 503);
         });
 
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
-            if ($request->is('api/git-sources') && $response->getStatusCode() >= 500
+            if ($request->is('api/git-sources', 'api/git-sources/*') && $response->getStatusCode() >= 500
                 && ! $exception instanceof GitProviderException) {
                 return response()->json(['code' => 'errors.unexpected'], 500);
             }

@@ -7,13 +7,14 @@ use App\Models\GitSource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 final readonly class GitSourceService
 {
     public const PER_PAGE = 10;
 
-    public function __construct(private GitProviderRegistry $providers) {}
+    public function __construct(private GitProviderRegistry $providers, private GitSourceSyncService $sync) {}
 
     /** @return LengthAwarePaginator<int, GitSource> */
     public function paginate(int $page): LengthAwarePaginator
@@ -49,17 +50,21 @@ final readonly class GitSourceService
         }
 
         try {
-            return GitSource::query()->create([
-                'provider' => $provider->getKey(),
-                'remote_id' => $remote->getRemoteId(),
-                'account' => $remote->getName(),
-                'normalized_account' => $normalizedAccount,
-                'name' => $remote->getDisplayName(),
-                'url' => $remote->getUrl(),
-                'avatar_url' => $remote->getAvatarUrl(),
-                'account_type' => $remote->getAccountType(),
-                'last_synced_at' => null,
-            ]);
+            return DB::transaction(function () use ($provider, $remote, $normalizedAccount): GitSource {
+                $source = GitSource::query()->create([
+                    'provider' => $provider->getKey(),
+                    'remote_id' => $remote->getRemoteId(),
+                    'account' => $remote->getName(),
+                    'normalized_account' => $normalizedAccount,
+                    'name' => $remote->getDisplayName(),
+                    'url' => $remote->getUrl(),
+                    'avatar_url' => $remote->getAvatarUrl(),
+                    'account_type' => $remote->getAccountType(),
+                    'last_synced_at' => null,
+                ]);
+
+                return $this->sync->start($source);
+            });
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['account' => 'create.duplicate']);
         }

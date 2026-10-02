@@ -59,8 +59,17 @@ export function useGitSources(showError: (message: string) => void) {
     }
 
     function select(id: string) {
+        if (selectedSource.value?.id === id) return;
         const source = sources.value.find((item) => item.id === id);
         if (source) selectedSource.value = source;
+    }
+
+    function reconcile(source: GitSource) {
+        if (selectedSource.value?.id === source.id)
+            selectedSource.value = source;
+        sources.value = sources.value.map((item) =>
+            item.id === source.id ? source : item,
+        );
     }
 
     function retry() {
@@ -80,6 +89,7 @@ export function useGitSources(showError: (message: string) => void) {
         failed,
         load,
         select,
+        reconcile,
         retry,
     };
 }

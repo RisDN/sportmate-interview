@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreGitSourceRequest;
 use App\Http\Resources\GitSourceResource;
+use App\Models\GitSource;
 use App\Services\GitSourceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,6 +12,11 @@ use Illuminate\Http\Request;
 class GitSourceController extends Controller
 {
     public const PAGE_COOKIE = 'git_sources_page';
+
+    public function show(Request $request, GitSource $gitSource): JsonResponse
+    {
+        return response()->json(['data' => (new GitSourceResource($gitSource))->resolve($request)]);
+    }
 
     public function index(Request $request, GitSourceService $sources): JsonResponse
     {

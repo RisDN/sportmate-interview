@@ -1,0 +1,171 @@
+import { useHttp } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import type { Ref } from 'vue';
+import { show } from '@/actions/App/Http/Controllers/GitSourceController';
+import { store } from '@/actions/App/Http/Controllers/GitSourceSyncController';
+import { apiErrorMessage, isCancelledRequest } from '@/lib/api-errors';
+import { t } from '@/lib/translate';
+import type { GitSource, GitSourceResponse } from '@/types/git-source';
+
+export function useGitSourceSync(
+    selectedSource: Ref<GitSource | null>,
+    reconcile: (source: GitSource) => void,
+    refreshRepositories: () => void,
+) {
+    const starting = ref(false);
+    const detailError = ref('');
+    const syncError = ref('');
+    const detailRequest = useHttp<Record<string, never>, GitSourceResponse>({});
+    const syncRequest = useHttp<Record<string, never>, GitSourceResponse>({});
+    const active = computed(() =>
+        ['queued', 'syncing', 'waiting'].includes(
+            selectedSource.value?.sync_status ?? '',
+        ),
+    );
+    let generation = 0;
+    let inFlight = false;
+    let mounted = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    function clearTimer() {
+        if (timer !== undefined) clearTimeout(timer);
+        timer = undefined;
+    }
+
+    function schedule() {
+        clearTimer();
+        if (!mounted || document.hidden || !active.value || starting.value)
+            return;
+        const delay =
+            selectedSource.value?.sync_status === 'waiting' ? 30_000 : 5_000;
+        timer = setTimeout(() => void refresh(), delay);
+    }
+
+    function applySource(source: GitSource) {
+        const previous = selectedSource.value;
+        if (previous?.id !== source.id) return;
+        const changed =
+            previous.sync_revision !== source.sync_revision ||
+            previous.sync_status !== source.sync_status;
+        reconcile(source);
+        if (changed) refreshRepositories();
+    }
+
+    async function refresh() {
+        const id = selectedSource.value?.id;
+        if (!mounted || document.hidden || !id || inFlight || starting.value)
+            return;
+        clearTimer();
+        const currentGeneration = generation;
+        inFlight = true;
+
+        function isCurrent() {
+            return (
+                currentGeneration === generation &&
+                selectedSource.value?.id === id
+            );
+        }
+
+        try {
+            await detailRequest.get(show.url({ gitSource: Number(id) }), {
+                onSuccess(response) {
+                    if (!isCurrent()) return;
+                    detailError.value = '';
+                    applySource(response.data);
+                },
+                onError() {
+                    if (isCurrent()) detailError.value = t('sync.statusFailed');
+                },
+            });
+        } catch (failure) {
+            if (isCurrent() && !isCancelledRequest(failure)) {
+                detailError.value = apiErrorMessage(
+                    failure,
+                    'sync.statusFailed',
+                );
+            }
+        } finally {
+            if (isCurrent()) {
+                inFlight = false;
+                schedule();
+            }
+        }
+    }
+
+    async function startSync() {
+        const id = selectedSource.value?.id;
+        if (!id || starting.value || active.value) return;
+        clearTimer();
+        const currentGeneration = ++generation;
+        detailRequest.cancel();
+        inFlight = false;
+        starting.value = true;
+        syncError.value = '';
+
+        function isCurrent() {
+            return (
+                currentGeneration === generation &&
+                selectedSource.value?.id === id
+            );
+        }
+
+        try {
+            await syncRequest.post(store.url({ gitSource: Number(id) }), {
+                onSuccess(response) {
+                    if (isCurrent()) applySource(response.data);
+                },
+                onError() {
+                    if (isCurrent()) syncError.value = t('sync.startFailed');
+                },
+            });
+        } catch (failure) {
+            if (isCurrent() && !isCancelledRequest(failure)) {
+                syncError.value = apiErrorMessage(failure, 'sync.startFailed');
+            }
+        } finally {
+            if (isCurrent()) {
+                starting.value = false;
+                void refresh();
+            }
+        }
+    }
+
+    function refreshWhenVisible() {
+        if (document.hidden) clearTimer();
+        else void refresh();
+    }
+
+    watch(
+        () => selectedSource.value?.id,
+        () => {
+            generation++;
+            clearTimer();
+            detailRequest.cancel();
+            syncRequest.cancel();
+            inFlight = false;
+            starting.value = false;
+            detailError.value = '';
+            syncError.value = '';
+            void refresh();
+        },
+    );
+
+    onMounted(() => {
+        mounted = true;
+        document.addEventListener('visibilitychange', refreshWhenVisible);
+        window.addEventListener('focus', refreshWhenVisible);
+        void refresh();
+    });
+
+    onBeforeUnmount(() => {
+        mounted = false;
+        generation++;
+        clearTimer();
+        detailRequest.cancel();
+        syncRequest.cancel();
+        document.removeEventListener('visibilitychange', refreshWhenVisible);
+        window.removeEventListener('focus', refreshWhenVisible);
+    });
+
+    return { starting, active, detailError, syncError, refresh, startSync };
+}
