@@ -21,6 +21,7 @@ use Tests\Fixtures\Git\GitHubPayload;
 
 beforeEach(function () {
     Http::preventStrayRequests();
+    config(['services.github.pat' => null]);
 });
 
 test('the default provider discovers canonical account names and source getters remain local', function (string $remoteType, AccountType $accountType) {
