@@ -18,4 +18,16 @@ export interface RemoteRepository {
 export interface RemoteRepositoryPage {
     readonly data: RemoteRepository[];
     readonly meta: PaginationMeta;
+    readonly fingerprint: string;
+}
+
+export interface RepositorySnapshot {
+    readonly meta: PaginationMeta;
+    readonly fingerprint: string;
+}
+
+export interface RepositoryObservation {
+    readonly sourceId: string;
+    readonly page: number;
+    readonly fingerprint: string;
 }

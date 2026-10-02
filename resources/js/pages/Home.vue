@@ -54,6 +54,8 @@ const {
     load: loadRepositories,
     refresh: refreshRepositories,
     retry: retryRepositories,
+    observation: repositoryObservation,
+    reconcileSnapshot: reconcileRepositories,
 } = useRemoteRepositories(selectedId);
 const {
     starting: syncStarting,
@@ -65,7 +67,8 @@ const {
 } = useGitSourceSync(
     selectedSource,
     reconcile,
-    refreshRepositories,
+    repositoryObservation,
+    reconcileRepositories,
     remove,
 );
 const mobileOpen = ref(false);

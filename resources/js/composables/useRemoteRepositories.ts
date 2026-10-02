@@ -8,6 +8,8 @@ import type { PaginationMeta } from '@/types/pagination';
 import type {
     RemoteRepository,
     RemoteRepositoryPage,
+    RepositoryObservation,
+    RepositorySnapshot,
 } from '@/types/remote-repository';
 
 export function useRemoteRepositories(sourceId: Ref<string | null>) {
@@ -16,6 +18,7 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
     const loading = ref(false);
     const refreshing = ref(false);
     const error = ref('');
+    const observation = shallowRef<RepositoryObservation | null>(null);
     const request = useHttp<Record<string, never>, RemoteRepositoryPage>({});
     let generation = 0;
     let requestedPage = 1;
@@ -36,6 +39,7 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
         requestedPage = page;
         inFlight = true;
         refreshPending = false;
+        if (!background) observation.value = null;
         loading.value = !background || pagination.value === null;
         refreshing.value = background && pagination.value !== null;
         if (!background) error.value = '';
@@ -53,6 +57,11 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
                         repositories.value = response.data;
                         pagination.value = response.meta;
                         requestedPage = response.meta.current_page;
+                        observation.value = {
+                            sourceId: id,
+                            page: response.meta.current_page,
+                            fingerprint: response.fingerprint,
+                        };
                         error.value = '';
                     },
                     onError() {
@@ -86,6 +95,28 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
         void load(requestedPage);
     }
 
+    function reconcileSnapshot(
+        snapshot: RepositorySnapshot,
+        observed: RepositoryObservation,
+    ) {
+        // A list load or page/source change invalidates earlier status responses.
+        if (
+            inFlight ||
+            observation.value !== observed ||
+            sourceId.value !== observed.sourceId
+        )
+            return;
+
+        if (
+            snapshot.fingerprint !== observed.fingerprint ||
+            snapshot.meta.current_page !== observed.page
+        ) {
+            void load(snapshot.meta.current_page, true);
+        } else {
+            pagination.value = snapshot.meta;
+        }
+    }
+
     watch(
         sourceId,
         () => {
@@ -94,6 +125,7 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
             inFlight = false;
             refreshPending = false;
             requestedPage = 1;
+            observation.value = null;
             repositories.value = [];
             pagination.value = null;
             error.value = '';
@@ -117,6 +149,8 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
         loading,
         refreshing,
         error,
+        observation,
+        reconcileSnapshot,
         load,
         refresh,
         retry,

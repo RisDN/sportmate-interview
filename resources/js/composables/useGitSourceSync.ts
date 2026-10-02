@@ -6,11 +6,19 @@ import { store } from '@/actions/App/Http/Controllers/GitSourceSyncController';
 import { apiErrorMessage, isCancelledRequest } from '@/lib/api-errors';
 import { t } from '@/lib/translate';
 import type { GitSource, GitSourceResponse } from '@/types/git-source';
+import type {
+    RepositoryObservation,
+    RepositorySnapshot,
+} from '@/types/remote-repository';
 
 export function useGitSourceSync(
     selectedSource: Ref<GitSource | null>,
     reconcile: (source: GitSource) => void,
-    refreshRepositories: () => void,
+    repositoryObservation: Ref<RepositoryObservation | null>,
+    reconcileRepositories: (
+        snapshot: RepositorySnapshot,
+        observed: RepositoryObservation,
+    ) => void,
     removeSource: (source: GitSource) => void,
 ) {
     const starting = ref(false);
@@ -25,6 +33,7 @@ export function useGitSourceSync(
     );
     let generation = 0;
     let inFlight = false;
+    let refreshPending = false;
     let mounted = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -43,22 +52,22 @@ export function useGitSourceSync(
     }
 
     function applySource(source: GitSource) {
-        const previous = selectedSource.value;
-        if (previous?.id !== source.id) return;
-        const changed =
-            previous.sync_revision !== source.sync_revision ||
-            previous.sync_status !== source.sync_status;
+        if (selectedSource.value?.id !== source.id) return;
         reconcile(source);
-        if (changed) refreshRepositories();
     }
 
     async function refresh() {
         const id = selectedSource.value?.id;
-        if (!mounted || document.hidden || !id || inFlight || starting.value)
+        if (!mounted || document.hidden || !id || starting.value) return;
+        if (inFlight) {
+            refreshPending = true;
             return;
+        }
         clearTimer();
         const currentGeneration = generation;
+        const observed = repositoryObservation.value;
         inFlight = true;
+        refreshPending = false;
 
         function isCurrent() {
             return (
@@ -68,24 +77,41 @@ export function useGitSourceSync(
         }
 
         try {
-            await detailRequest.get(show.url({ gitSource: Number(id) }), {
-                onSuccess(response) {
-                    if (!isCurrent()) return;
-                    detailError.value = '';
-                    applySource(response.data);
+            await detailRequest.get(
+                show.url(
+                    { gitSource: Number(id) },
+                    {
+                        query: observed
+                            ? { repository_page: observed.page }
+                            : undefined,
+                    },
+                ),
+                {
+                    onSuccess(response) {
+                        if (!isCurrent()) return;
+                        detailError.value = '';
+                        applySource(response.data);
+                        if (observed && response.repositories) {
+                            reconcileRepositories(
+                                response.repositories,
+                                observed,
+                            );
+                        }
+                    },
+                    onError() {
+                        if (isCurrent())
+                            detailError.value = t('sync.statusFailed');
+                    },
+                    onHttpException(response) {
+                        if (
+                            response.status === 404 &&
+                            isCurrent() &&
+                            selectedSource.value
+                        )
+                            removeSource(selectedSource.value);
+                    },
                 },
-                onError() {
-                    if (isCurrent()) detailError.value = t('sync.statusFailed');
-                },
-                onHttpException(response) {
-                    if (
-                        response.status === 404 &&
-                        isCurrent() &&
-                        selectedSource.value
-                    )
-                        removeSource(selectedSource.value);
-                },
-            });
+            );
         } catch (failure) {
             if (isCurrent() && !isCancelledRequest(failure)) {
                 detailError.value = apiErrorMessage(
@@ -96,7 +122,8 @@ export function useGitSourceSync(
         } finally {
             if (isCurrent()) {
                 inFlight = false;
-                schedule();
+                if (refreshPending) void refresh();
+                else schedule();
             }
         }
     }
@@ -108,6 +135,7 @@ export function useGitSourceSync(
         const currentGeneration = ++generation;
         detailRequest.cancel();
         inFlight = false;
+        refreshPending = false;
         starting.value = true;
         syncError.value = '';
 
@@ -160,12 +188,17 @@ export function useGitSourceSync(
             detailRequest.cancel();
             syncRequest.cancel();
             inFlight = false;
+            refreshPending = false;
             starting.value = false;
             detailError.value = '';
             syncError.value = '';
             void refresh();
         },
     );
+
+    watch(repositoryObservation, (observed) => {
+        if (observed) void refresh();
+    });
 
     onMounted(() => {
         mounted = true;

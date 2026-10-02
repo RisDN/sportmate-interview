@@ -1,5 +1,6 @@
 import type { Component } from 'vue';
 import type { PaginationMeta } from '@/types/pagination';
+import type { RepositorySnapshot } from '@/types/remote-repository';
 
 export type GitSourceSyncStatus =
     | 'idle'
@@ -41,4 +42,5 @@ export interface GitSourcePage {
 
 export interface GitSourceResponse {
     readonly data: GitSource;
+    readonly repositories?: RepositorySnapshot;
 }

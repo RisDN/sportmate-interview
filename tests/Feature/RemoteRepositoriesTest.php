@@ -76,6 +76,7 @@ test('empty repository lists return a single empty page', function () {
 
     $this->getJson(route('git-sources.repositories.index', ['gitSource' => $source, 'page' => 300]))
         ->assertOk()->assertExactJson([
+            'fingerprint' => hash('sha256', '[]'),
             'data' => [], 'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 10, 'total' => 0],
         ]);
 });
