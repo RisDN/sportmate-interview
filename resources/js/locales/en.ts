@@ -11,7 +11,8 @@ export const en = {
     'sidebar.close': 'Close sources',
     'sidebar.addSource': 'New Source',
     'sidebar.noResults': 'No sources found',
-    'sidebar.noResultsHint': 'Try another name or provider, or check another page.',
+    'sidebar.noResultsHint':
+        'Try another name or provider, or check another page.',
     'sidebar.empty': 'No sources yet',
     'sidebar.emptyHint': 'Create a source to get started.',
     'sidebar.select': 'Select {name}',
@@ -42,23 +43,28 @@ export const en = {
     'create.cancel': 'Cancel',
     'create.submit': 'Create source',
     'create.saving': 'Creating source…',
-    'create.validating': 'Checking account name…',
     'create.close': 'Close dialog',
     'create.required': 'Enter a username or organization name.',
-    'create.invalid': 'Use up to 39 letters, numbers, or single hyphens. Start and end with a letter or number.',
+    'create.invalid':
+        'Use up to 39 letters, numbers, or single hyphens. Start and end with a letter or number.',
     'create.duplicate': 'This source is already in your list.',
     'create.notFound': 'No user or organization exists with this account name.',
     'create.providerInvalid': 'This Git provider is not supported.',
     'create.failed': 'Could not create this source. Please try again.',
-    'create.validationFailed': 'Could not check the account name. Please try again.',
-    'create.refreshFailed': 'Your source was saved, but the list could not be refreshed. Please try again.',
+    'create.refreshFailed':
+        'Your source was saved, but the list could not be refreshed. Please try again.',
     'create.added': '{name} was added to your sources.',
-    'errors.rateLimited': 'The Git provider is receiving too many requests. Please try again later.',
-    'errors.providerInvalidResponse': 'The Git provider returned an unexpected response. Please try again later.',
-    'errors.providerUnavailable': 'The Git provider could not be reached. Please try again later.',
+    'errors.rateLimited':
+        'The Git provider is receiving too many requests. Please try again later.',
+    'errors.providerInvalidResponse':
+        'The Git provider returned an unexpected response. Please try again later.',
+    'errors.providerUnavailable':
+        'The Git provider could not be reached. Please try again later.',
     'errors.unexpected': 'Something went wrong. Please try again.',
-    'errors.network': 'The request could not be completed. Check your connection and try again.',
-    'errors.sessionExpired': 'Your session has expired. Refresh the page and try again.',
+    'errors.network':
+        'The request could not be completed. Check your connection and try again.',
+    'errors.sessionExpired':
+        'Your session has expired. Refresh the page and try again.',
     'toast.dismiss': 'Dismiss notification',
 } as const;
 

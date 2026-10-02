@@ -1,15 +1,7 @@
 <script setup lang="ts">
 import { useHttp } from '@inertiajs/vue3';
 import { PhCheck, PhCircleNotch, PhX } from '@phosphor-icons/vue';
-import {
-    computed,
-    nextTick,
-    onBeforeUnmount,
-    ref,
-    useId,
-    useTemplateRef,
-    watch,
-} from 'vue';
+import { computed, nextTick, useId, useTemplateRef, watch } from 'vue';
 import { store } from '@/actions/App/Http/Controllers/GitSourceController';
 import AppDialog from '@/components/ui/AppDialog.vue';
 import AppToast from '@/components/ui/AppToast.vue';
@@ -36,73 +28,13 @@ const form = useHttp<{ provider: string; account: string }, GitSourceResponse>({
     provider: GitHubProvider.id,
     account: '',
 });
-// A separate Precognition request lets transport failures and cancellation use
-// the same error handling as submission, without copying server validation rules.
-const validation = useHttp<{ provider: string; account: string }, null>({
-    provider: GitHubProvider.id,
-    account: '',
-});
-const validating = ref(false);
 const error = computed(() =>
     form.errors.account ? errorMessage(form.errors.account) : '',
 );
-let validationTimer: ReturnType<typeof setTimeout> | undefined;
-let validationGeneration = 0;
-
-function cancelValidation() {
-    validationGeneration++;
-    clearTimeout(validationTimer);
-    validationTimer = undefined;
-    validation.cancel();
-    validating.value = false;
-}
-
-async function validateAccount() {
-    cancelValidation();
-    if (!props.open || form.processing) return;
-    const generation = validationGeneration;
-    validation.provider = form.provider;
-    validation.account = form.account;
-    validating.value = true;
-
-    try {
-        await validation.post(store.url(), {
-            headers: {
-                Precognition: 'true',
-                'Precognition-Validate-Only': 'account',
-            },
-            onSuccess() {
-                if (generation === validationGeneration)
-                    form.clearErrors('account');
-            },
-            onError(errors) {
-                if (generation !== validationGeneration) return;
-                if (errors.account) form.setError('account', errors.account);
-                if (errors.provider) form.setError('provider', errors.provider);
-            },
-        });
-    } catch (failure) {
-        if (
-            generation === validationGeneration &&
-            !isCancelledRequest(failure)
-        ) {
-            emit('error', apiErrorMessage(failure, 'create.validationFailed'));
-        }
-    } finally {
-        if (generation === validationGeneration) validating.value = false;
-    }
-}
-
-function scheduleValidation() {
-    cancelValidation();
-    form.clearErrors('account');
-    validationTimer = setTimeout(() => void validateAccount(), 400);
-}
 
 watch(
     () => props.open,
     (open) => {
-        cancelValidation();
         if (open) {
             form.account = '';
             form.provider = GitHubProvider.id;
@@ -113,7 +45,6 @@ watch(
 
 async function submit() {
     if (form.processing) return;
-    cancelValidation();
 
     try {
         await form.post(store.url(), {
@@ -139,8 +70,6 @@ async function submit() {
             emit('error', apiErrorMessage(failure, 'create.failed'));
     }
 }
-
-onBeforeUnmount(cancelValidation);
 </script>
 
 <template>
@@ -228,8 +157,7 @@ onBeforeUnmount(cancelValidation);
                     :aria-invalid="!!error"
                     :aria-describedby="`${id}-hint${error ? ` ${id}-error` : ''}`"
                     :class="['text-input', { 'border-danger': error }]"
-                    @input="scheduleValidation"
-                    @blur="validateAccount"
+                    @input="form.clearErrors('account')"
                 />
                 <p
                     :id="`${id}-hint`"
@@ -244,18 +172,6 @@ onBeforeUnmount(cancelValidation);
                     role="alert"
                 >
                     {{ error }}
-                </p>
-                <p
-                    v-if="validating"
-                    class="flex items-center gap-2 text-xs text-muted"
-                    role="status"
-                >
-                    <PhCircleNotch
-                        :size="14"
-                        class="animate-spin motion-reduce:animate-none"
-                        aria-hidden="true"
-                    />
-                    {{ t('create.validating') }}
                 </p>
             </div>
 
