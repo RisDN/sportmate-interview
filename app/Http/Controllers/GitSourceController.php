@@ -15,7 +15,10 @@ class GitSourceController extends Controller
 
     public function show(Request $request, GitSource $gitSource): JsonResponse
     {
-        return response()->json(['data' => (new GitSourceResource($gitSource))->resolve($request)]);
+        $source = $gitSource->fresh();
+        abort_if($source === null || $source->marked_for_deletion_at !== null, 404);
+
+        return response()->json(['data' => (new GitSourceResource($source))->resolve($request)]);
     }
 
     public function index(Request $request, GitSourceService $sources): JsonResponse
@@ -58,5 +61,12 @@ class GitSourceController extends Controller
         $source = $sources->create($request->string('provider')->toString(), $request->string('account')->toString());
 
         return response()->json(['data' => (new GitSourceResource($source))->resolve($request)], 201);
+    }
+
+    public function destroy(Request $request, GitSource $gitSource, GitSourceService $sources): JsonResponse
+    {
+        $source = $sources->markForDeletion($gitSource);
+
+        return response()->json(['data' => (new GitSourceResource($source))->resolve($request)], 202);
     }
 }

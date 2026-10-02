@@ -16,7 +16,9 @@ class RemoteRepositoryController extends Controller
         $page = is_string($value) && ctype_digit($value)
             ? filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
             : false;
-        $repositories = $repositories->paginate($gitSource, $page === false ? 1 : $page);
+        $source = $gitSource->fresh();
+        abort_if($source === null || $source->marked_for_deletion_at !== null, 404);
+        $repositories = $repositories->paginate($source, $page === false ? 1 : $page);
 
         return response()->json([
             'data' => RemoteRepositoryResource::collection($repositories->getCollection())->resolve($request),

@@ -3,6 +3,7 @@ import {
     PhArrowsClockwise,
     PhCircleNotch,
     PhClock,
+    PhTrash,
     PhWarningCircle,
 } from '@phosphor-icons/vue';
 import { computed } from 'vue';
@@ -21,7 +22,7 @@ const props = defineProps<{
     detailError: string;
     syncError: string;
 }>();
-defineEmits<{ sync: []; refresh: [] }>();
+defineEmits<{ sync: []; refresh: []; delete: [] }>();
 
 const provider = computed(() => getGitProvider(props.source.provider));
 const statusLabels: Record<GitSourceSyncStatus, TranslationKey> = {
@@ -210,5 +211,14 @@ const buttonLabel = computed(() => {
                 >
             </div>
         </div>
+        <button
+            type="button"
+            class="secondary-button focus-ring gap-2 border-danger/40 text-danger hover:bg-danger/10"
+            aria-haspopup="dialog"
+            @click="$emit('delete')"
+        >
+            <PhTrash :size="17" aria-hidden="true" />
+            {{ t('delete.open') }}
+        </button>
     </section>
 </template>

@@ -13,6 +13,7 @@ use App\Models\GitSource;
 use App\Models\RemoteRepository;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -38,7 +39,7 @@ final readonly class GitSourceSyncService
             $runId = (string) Str::uuid();
 
             // The conditional write acquires SQLite's writer lock before reading the checkpoint.
-            $started = GitSource::query()->whereKey($source->id)
+            $started = GitSource::query()->whereKey($source->id)->available()
                 ->whereNotIn('sync_status', self::ACTIVE_STATUSES)
                 ->update([
                     'sync_status' => SyncStatus::Queued->value,
@@ -47,7 +48,11 @@ final readonly class GitSourceSyncService
                     'sync_revision' => DB::raw('sync_revision + 1'),
                 ]);
 
-            $current = $source->fresh() ?? throw new RuntimeException('Git source no longer exists.');
+            $current = $source->fresh();
+
+            if ($current === null || $current->marked_for_deletion_at !== null) {
+                throw (new ModelNotFoundException)->setModel(GitSource::class, [$source->id]);
+            }
 
             if ($started === 0) {
                 return $current;
@@ -471,7 +476,7 @@ final readonly class GitSourceSyncService
     /** @return Builder<GitSource> */
     private function active(int $sourceId, string $runId): Builder
     {
-        return GitSource::query()->whereKey($sourceId)->where('sync_run_id', $runId)
+        return GitSource::query()->available()->whereKey($sourceId)->where('sync_run_id', $runId)
             ->whereIn('sync_status', self::ACTIVE_STATUSES);
     }
 

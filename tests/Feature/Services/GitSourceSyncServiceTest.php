@@ -3,7 +3,9 @@
 use App\Enums\SyncStatus;
 use App\Jobs\SyncGitSource;
 use App\Models\GitSource;
+use App\Services\GitSourceService;
 use App\Services\GitSourceSyncService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -91,5 +93,17 @@ test('queue fakes observe the source ID and run token without serializing source
 
     Queue::assertPushed(SyncGitSource::class, fn (SyncGitSource $job) => $job->sourceId === $source->id && $job->runId === $started->sync_run_id);
     $this->assertDatabaseEmpty('jobs');
+    Http::assertNothingSent();
+});
+
+test('a stale source model cannot restart synchronization after deletion was marked', function () {
+    $source = GitSource::factory()->create();
+    app(GitSourceService::class)->markForDeletion($source);
+
+    expect(fn () => app(GitSourceSyncService::class)->start($source))->toThrow(ModelNotFoundException::class);
+
+    expect($source->fresh()->sync_status)->toBe(SyncStatus::Idle);
+    expect($source->fresh()->sync_run_id)->toBeNull();
+    $this->assertDatabaseCount('jobs', 1);
     Http::assertNothingSent();
 });

@@ -7,6 +7,8 @@ use App\Git\AccountType;
 use Carbon\CarbonImmutable;
 use Database\Factories\GitSourceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -24,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $avatar_url
  * @property AccountType $account_type
  * @property CarbonImmutable|null $last_synced_at
+ * @property CarbonImmutable|null $marked_for_deletion_at
  * @property SyncStatus $sync_status
  * @property string|null $last_sync_error_code
  * @property CarbonImmutable|null $last_sync_error_at
@@ -53,6 +56,15 @@ class GitSource extends Model
         ]);
     }
 
+    /** @param Builder<GitSource> $query
+     * @return Builder<GitSource>
+     */
+    #[Scope]
+    protected function available(Builder $query): Builder
+    {
+        return $query->whereNull('marked_for_deletion_at');
+    }
+
     /** @return HasMany<RemoteRepository, $this> */
     public function repositories(): HasMany
     {
@@ -65,6 +77,7 @@ class GitSource extends Model
         return [
             'account_type' => AccountType::class,
             'last_synced_at' => 'immutable_datetime',
+            'marked_for_deletion_at' => 'immutable_datetime',
             'sync_status' => SyncStatus::class,
             'last_sync_error_at' => 'immutable_datetime',
             'sync_retry_at' => 'immutable_datetime',

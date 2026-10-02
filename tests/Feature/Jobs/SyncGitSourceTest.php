@@ -2,9 +2,11 @@
 
 use App\Enums\SyncStatus;
 use App\Git\AccountType;
+use App\Jobs\DeleteGitSource;
 use App\Jobs\SyncGitSource;
 use App\Models\GitSource;
 use App\Models\RemoteRepository;
+use App\Services\GitSourceService;
 use App\Services\GitSourceSyncService;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Queue\WorkerOptions;
@@ -594,5 +596,57 @@ test('the crash limit failing a newer reservation before its handler starts stil
     expect($source->fresh()->sync_checkpoint['job_attempt'])->toBe(2);
     expect($source->fresh()->last_sync_error_code)->toBe('errors.unexpected');
     $this->assertDatabaseEmpty('jobs');
+    Http::assertSentCount(1);
+});
+
+test('an in-flight repository result cannot write after deletion is marked or completed', function (bool $cleanupCompleted) {
+    $source = queuedGitSource();
+    Http::fake([
+        'https://api.github.com/orgs/laravel/repos?*' => Http::response([GitHubPayload::repository()]),
+        'https://api.github.com/repos/laravel/framework' => Http::response(GitHubPayload::repository()),
+        'https://api.github.com/repos/laravel/framework/pulls?*' => Http::response([]),
+        'https://api.github.com/repos/laravel/framework/commits?*' => function () use ($source, $cleanupCompleted) {
+            app(GitSourceService::class)->markForDeletion($source);
+
+            if ($cleanupCompleted) {
+                (new DeleteGitSource($source->id))->handle();
+            }
+
+            return Http::response(syncCommitPayload());
+        },
+    ]);
+
+    runSyncReservations(4);
+    (new SyncGitSource($source->id, $source->sync_run_id))->failed(new RuntimeException('Late failure after cancellation.'));
+
+    $this->assertDatabaseEmpty('remote_repositories');
+    $this->assertDatabaseCount('jobs', 1);
+    $this->assertDatabaseEmpty('failed_jobs');
+    if ($cleanupCompleted) {
+        $this->assertModelMissing($source);
+    } else {
+        expect($source->fresh()->marked_for_deletion_at)->not->toBeNull();
+        expect($source->fresh()->sync_status)->toBe(SyncStatus::Idle);
+        expect($source->fresh()->last_synced_at)->toBeNull();
+        expect($source->fresh()->last_sync_error_code)->toBeNull();
+    }
+    Http::assertSentCount(4);
+})->with(['marked' => false, 'removed' => true]);
+
+test('an in-flight provider error after deletion cannot schedule a retry or mark the source failed', function () {
+    $source = queuedGitSource();
+    Http::fake(['https://api.github.com/orgs/laravel/repos?*' => function () use ($source) {
+        app(GitSourceService::class)->markForDeletion($source);
+
+        return Http::response([], 503);
+    }]);
+
+    runSyncReservations();
+
+    expect($source->fresh()->sync_status)->toBe(SyncStatus::Idle);
+    expect($source->fresh()->sync_retry_at)->toBeNull();
+    expect($source->fresh()->last_sync_error_code)->toBeNull();
+    $this->assertDatabaseCount('jobs', 1);
+    $this->assertDatabaseEmpty('failed_jobs');
     Http::assertSentCount(1);
 });

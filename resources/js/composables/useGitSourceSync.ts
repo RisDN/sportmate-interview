@@ -11,6 +11,7 @@ export function useGitSourceSync(
     selectedSource: Ref<GitSource | null>,
     reconcile: (source: GitSource) => void,
     refreshRepositories: () => void,
+    removeSource: (source: GitSource) => void,
 ) {
     const starting = ref(false);
     const detailError = ref('');
@@ -76,6 +77,14 @@ export function useGitSourceSync(
                 onError() {
                     if (isCurrent()) detailError.value = t('sync.statusFailed');
                 },
+                onHttpException(response) {
+                    if (
+                        response.status === 404 &&
+                        isCurrent() &&
+                        selectedSource.value
+                    )
+                        removeSource(selectedSource.value);
+                },
             });
         } catch (failure) {
             if (isCurrent() && !isCancelledRequest(failure)) {
@@ -116,6 +125,14 @@ export function useGitSourceSync(
                 },
                 onError() {
                     if (isCurrent()) syncError.value = t('sync.startFailed');
+                },
+                onHttpException(response) {
+                    if (
+                        response.status === 404 &&
+                        isCurrent() &&
+                        selectedSource.value
+                    )
+                        removeSource(selectedSource.value);
                 },
             });
         } catch (failure) {

@@ -29,6 +29,7 @@ export interface GitSource {
     readonly last_sync_error_at: number | null;
     readonly sync_retry_at: number | null;
     readonly sync_revision: number;
+    readonly marked_for_deletion_at: number | null;
 }
 
 export type GitSourcePagination = PaginationMeta;

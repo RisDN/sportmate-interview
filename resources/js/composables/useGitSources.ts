@@ -89,6 +89,23 @@ export function useGitSources(showError: (message: string) => void) {
         void load(retryPage);
     }
 
+    async function remove(source: GitSource) {
+        cancelPending();
+        const wasVisible = sources.value.some((item) => item.id === source.id);
+        sources.value = sources.value.filter((item) => item.id !== source.id);
+        if (selectedSource.value?.id === source.id) {
+            selectedSource.value = sources.value[0] ?? null;
+        }
+        const meta = pagination.value;
+        const lastPage = meta
+            ? Math.max(
+                  1,
+                  Math.ceil((meta.total - Number(wasVisible)) / meta.per_page),
+              )
+            : 1;
+        await load(Math.min(meta?.current_page ?? 1, lastPage));
+    }
+
     watch(
         query,
         () => {
@@ -115,5 +132,6 @@ export function useGitSources(showError: (message: string) => void) {
         select,
         reconcile,
         retry,
+        remove,
     };
 }

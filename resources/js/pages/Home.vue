@@ -11,6 +11,7 @@ import {
     watch,
 } from 'vue';
 import CreateGitSourceDialog from '@/components/git-sources/CreateGitSourceDialog.vue';
+import DeleteGitSourceDialog from '@/components/git-sources/DeleteGitSourceDialog.vue';
 import GitSourceProfile from '@/components/git-sources/GitSourceProfile.vue';
 import GitSourceSidebar from '@/components/git-sources/GitSourceSidebar.vue';
 import RepositoryList from '@/components/repositories/RepositoryList.vue';
@@ -39,6 +40,7 @@ const {
     select,
     reconcile,
     retry,
+    remove,
 } = useGitSources((message) => {
     toast.value = message;
 });
@@ -60,9 +62,15 @@ const {
     syncError,
     refresh: refreshSync,
     startSync,
-} = useGitSourceSync(selectedSource, reconcile, refreshRepositories);
+} = useGitSourceSync(
+    selectedSource,
+    reconcile,
+    refreshRepositories,
+    remove,
+);
 const mobileOpen = ref(false);
 const createOpen = ref(false);
+const deleteTarget = ref<GitSource | null>(null);
 const announcement = ref('');
 const mobileTrigger = useTemplateRef<HTMLButtonElement>('mobileTrigger');
 const mainContent = useTemplateRef<HTMLElement>('mainContent');
@@ -132,6 +140,14 @@ async function addSource(source: GitSource) {
     await load(1, true);
 }
 
+async function deleteSource(source: GitSource) {
+    deleteTarget.value = null;
+    announcement.value = t('delete.deleted', { name: source.name });
+    await remove(source);
+    await nextTick();
+    mainContent.value?.focus({ preventScroll: true });
+}
+
 function closeDrawerOnDesktop(event: MediaQueryListEvent) {
     if (event.matches) mobileOpen.value = false;
 }
@@ -191,7 +207,8 @@ onBeforeUnmount(() =>
 
             <main
                 ref="mainContent"
-                class="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-10 sm:px-10 sm:pb-12"
+                tabindex="-1"
+                class="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-10 outline-none sm:px-10 sm:pb-12"
                 :aria-label="t('source.selected')"
             >
                 <div
@@ -207,6 +224,7 @@ onBeforeUnmount(() =>
                         :sync-error="syncError"
                         @sync="startSync"
                         @refresh="refreshSync"
+                        @delete="deleteTarget = selectedSource"
                     />
                     <RepositoryList
                         ref="repositoryList"
@@ -263,6 +281,11 @@ onBeforeUnmount(() =>
         @create="addSource"
         @error="toast = $event"
         @dismiss-toast="toast = ''"
+    />
+    <DeleteGitSourceDialog
+        :source="deleteTarget"
+        @close="deleteTarget = null"
+        @deleted="deleteSource"
     />
     <AppToast
         v-if="!mobileOpen && !createOpen"

@@ -153,6 +153,7 @@ test('creating a source saves provider metadata and queues its first synchroniza
         'avatar_url' => 'https://avatars.githubusercontent.com/u/958072?v=4',
         'account_type' => $accountType,
         'last_synced_at' => null,
+        'marked_for_deletion_at' => null,
         'sync_status' => 'queued',
         'last_sync_error_code' => null,
         'last_sync_error_at' => null,

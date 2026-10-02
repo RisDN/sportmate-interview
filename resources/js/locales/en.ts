@@ -101,6 +101,15 @@ export const en = {
     'create.refreshFailed':
         'Your source was saved, but the list could not be refreshed. Please try again.',
     'create.added': '{name} was added to your sources.',
+    'delete.open': 'Delete this source',
+    'delete.title': 'Delete this source?',
+    'delete.description':
+        'Delete {name} and all its saved repository data? This cannot be undone. Any synchronization will stop. Your source will disappear immediately while its data is removed in the background.',
+    'delete.cancel': 'Keep source',
+    'delete.confirm': 'Delete source',
+    'delete.deleting': 'Deleting source…',
+    'delete.failed': 'Could not delete this source. Please try again.',
+    'delete.deleted': '{name} was marked for deletion.',
     'errors.rateLimited':
         'The Git provider is receiving too many requests. Please try again later.',
     'errors.providerInvalidResponse':

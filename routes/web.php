@@ -14,5 +14,6 @@ Route::post('/api/git-sources', [GitSourceController::class, 'store'])
     ->name('git-sources.store');
 
 Route::get('/api/git-sources/{gitSource}', [GitSourceController::class, 'show'])->name('git-sources.show');
+Route::delete('/api/git-sources/{gitSource}', [GitSourceController::class, 'destroy'])->name('git-sources.destroy');
 Route::post('/api/git-sources/{gitSource}/sync', [GitSourceSyncController::class, 'store'])->name('git-sources.sync');
 Route::get('/api/git-sources/{gitSource}/repositories', [RemoteRepositoryController::class, 'index'])->name('git-sources.repositories.index');
