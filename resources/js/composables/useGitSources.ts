@@ -1,5 +1,5 @@
 import { useHttp } from '@inertiajs/vue3';
-import { onBeforeUnmount, ref, shallowRef, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { index } from '@/actions/App/Http/Controllers/GitSourceController';
 import { apiErrorMessage, isCancelledRequest } from '@/lib/api-errors';
 import { t } from '@/lib/translate';
@@ -17,15 +17,23 @@ export function useGitSources(showError: (message: string) => void) {
     const loading = ref(true);
     const failed = ref(false);
     const request = useHttp<Record<string, never>, GitSourcePage>({});
+    const backgroundRequest = useHttp<Record<string, never>, GitSourcePage>({});
     let generation = 0;
     let retryPage: number | undefined;
+    let mounted = false;
+    let backgroundInFlight = false;
     let searchTimer: ReturnType<typeof setTimeout> | undefined;
+    let statusTimer: ReturnType<typeof setTimeout> | undefined;
 
     function cancelPending() {
         generation++;
         request.cancel();
+        backgroundRequest.cancel();
+        backgroundInFlight = false;
         clearTimeout(searchTimer);
+        clearTimeout(statusTimer);
         searchTimer = undefined;
+        statusTimer = undefined;
     }
 
     function listUrl(page?: number) {
@@ -33,6 +41,72 @@ export function useGitSources(showError: (message: string) => void) {
         return index.url({
             query: { page: page ?? (search ? 1 : undefined), search },
         });
+    }
+
+    function hasBackgroundSync() {
+        return sources.value.some(
+            (source) =>
+                source.id !== selectedSource.value?.id &&
+                ['queued', 'syncing', 'waiting'].includes(source.sync_status),
+        );
+    }
+
+    function scheduleStatusRefresh() {
+        if (
+            !mounted ||
+            document.hidden ||
+            loading.value ||
+            failed.value ||
+            !hasBackgroundSync()
+        ) {
+            clearTimeout(statusTimer);
+            statusTimer = undefined;
+            return;
+        }
+        if (statusTimer !== undefined || backgroundInFlight) return;
+        statusTimer = setTimeout(() => {
+            statusTimer = undefined;
+            void refreshStatuses();
+        }, 5_000);
+    }
+
+    async function refreshStatuses() {
+        if (
+            !mounted ||
+            document.hidden ||
+            loading.value ||
+            failed.value ||
+            !pagination.value ||
+            backgroundInFlight
+        )
+            return;
+        const currentGeneration = generation;
+        backgroundInFlight = true;
+
+        try {
+            await backgroundRequest.get(
+                listUrl(pagination.value?.current_page),
+                {
+                    onSuccess(response) {
+                        if (currentGeneration !== generation) return;
+                        // The selected source has its own, more recent detail polling.
+                        sources.value = response.data.map((source) =>
+                            source.id === selectedSource.value?.id
+                                ? selectedSource.value
+                                : source,
+                        );
+                        pagination.value = response.meta;
+                    },
+                },
+            );
+        } catch {
+            // Keep the last known sidebar statuses; the next poll retries.
+        } finally {
+            if (currentGeneration === generation) {
+                backgroundInFlight = false;
+                scheduleStatusRefresh();
+            }
+        }
     }
 
     async function load(page?: number, afterCreate = false) {
@@ -67,7 +141,10 @@ export function useGitSources(showError: (message: string) => void) {
                 reportFailure(apiErrorMessage(error, 'sources.loadFailed'));
             }
         } finally {
-            if (currentGeneration === generation) loading.value = false;
+            if (currentGeneration === generation) {
+                loading.value = false;
+                scheduleStatusRefresh();
+            }
         }
     }
 
@@ -117,8 +194,28 @@ export function useGitSources(showError: (message: string) => void) {
         { flush: 'sync' },
     );
 
+    watch([sources, () => selectedSource.value?.id], scheduleStatusRefresh);
+
+    function refreshWhenVisible() {
+        if (document.hidden) {
+            clearTimeout(statusTimer);
+            statusTimer = undefined;
+        } else {
+            void refreshStatuses();
+        }
+    }
+
+    onMounted(() => {
+        mounted = true;
+        document.addEventListener('visibilitychange', refreshWhenVisible);
+        window.addEventListener('focus', refreshWhenVisible);
+    });
+
     onBeforeUnmount(() => {
+        mounted = false;
         cancelPending();
+        document.removeEventListener('visibilitychange', refreshWhenVisible);
+        window.removeEventListener('focus', refreshWhenVisible);
     });
 
     return {
