@@ -345,3 +345,66 @@ test('write failures return 500 without saving or exposing database details', fu
     $this->assertDatabaseEmpty('git_sources');
     Http::assertSentCount(1);
 });
+
+test('source searches match usernames and Unicode display names beyond the unfiltered first page', function (string $search) {
+    $source = GitSource::factory()->create(['account' => 'risdn', 'normalized_account' => 'risdn', 'name' => 'Rostás András']);
+    GitSource::factory()->count(12)->create(['name' => 'Unrelated account']);
+
+    $response = $this->getJson(route('git-sources.index', ['search' => $search]));
+
+    $response->assertOk()->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', (string) $source->id)->assertJsonPath('meta.total', 1);
+    Http::assertNothingSent();
+})->with(['username' => 'RISDN', 'partial username' => 'isd', 'display name' => 'Rostás András', 'accented case' => 'ROSTÁS', 'trimmed surname' => '  andrás  ']);
+
+test('source searches paginate all matching rows and preserve the unfiltered page preference', function () {
+    GitSource::factory()->count(12)->create(['name' => 'Matching account']);
+    GitSource::factory()->count(10)->create(['name' => 'Unrelated account']);
+
+    $this->withCookie(GitSourceController::PAGE_COOKIE, '2')
+        ->getJson(route('git-sources.index', ['search' => 'matching']))
+        ->assertOk()->assertJsonCount(10, 'data')->assertJsonPath('meta.current_page', 1)
+        ->assertJsonPath('meta.total', 12)->assertCookieMissing(GitSourceController::PAGE_COOKIE);
+
+    $this->getJson(route('git-sources.index', ['search' => 'matching', 'page' => 999]))
+        ->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('meta.current_page', 2)
+        ->assertJsonPath('meta.last_page', 2)->assertJsonPath('meta.total', 12);
+});
+
+test('source search treats SQL wildcard and escape characters as literal text', function (string $search) {
+    $source = GitSource::factory()->create(['name' => 'Before '.$search.' after']);
+    GitSource::factory()->create(['name' => 'Before anything after']);
+
+    $response = $this->getJson(route('git-sources.index', ['search' => $search]));
+
+    $response->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', (string) $source->id);
+})->with(['percent' => '%', 'underscore' => '_', 'escape' => '!', 'backslash' => '\\', 'SQL text' => "' OR 1=1 --"]);
+
+test('empty searches restore the full source list and remembered page', function () {
+    GitSource::factory()->count(11)->create();
+
+    $this->withCookie(GitSourceController::PAGE_COOKIE, '2')
+        ->getJson(route('git-sources.index', ['search' => '  ']))
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('meta.current_page', 2)
+        ->assertJsonPath('meta.total', 11)->assertCookie(GitSourceController::PAGE_COOKIE, '2');
+});
+
+test('invalid source searches return 422 before changing the page preference', function (mixed $search, string $message) {
+    $this->getJson(route('git-sources.index', ['search' => $search]))
+        ->assertUnprocessable()->assertJsonPath('errors.search.0', $message)
+        ->assertCookieMissing(GitSourceController::PAGE_COOKIE);
+    Http::assertNothingSent();
+})->with([
+    'array' => [['risdn'], 'The search field must be a string.'],
+    'too long' => [str_repeat('x', 256), 'The search field must not be greater than 255 characters.'],
+]);
+
+test('renamed display names remain searchable with Unicode case folding', function () {
+    $source = GitSource::factory()->create(['name' => 'Previous display name']);
+    $source->update(['name' => 'Árvíztűrő Tükörfúrógép']);
+
+    $this->getJson(route('git-sources.index', ['search' => 'ÁRVÍZTŰRŐ']))
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', (string) $source->id);
+    $this->getJson(route('git-sources.index', ['search' => 'Previous display name']))
+        ->assertOk()->assertJsonCount(0, 'data');
+});

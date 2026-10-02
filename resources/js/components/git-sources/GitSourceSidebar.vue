@@ -5,14 +5,13 @@ import {
     PhPlus,
     PhX,
 } from '@phosphor-icons/vue';
-import { computed, useId, useTemplateRef } from 'vue';
+import { useId, useTemplateRef } from 'vue';
 import GitSourceItem from '@/components/git-sources/GitSourceItem.vue';
 import AppPagination from '@/components/ui/AppPagination.vue';
-import { getGitProvider } from '@/data/git-providers';
 import { t } from '@/lib/translate';
 import type { GitSource, GitSourcePagination } from '@/types/git-source';
 
-const props = withDefaults(
+withDefaults(
     defineProps<{
         sources: readonly GitSource[];
         selectedId: string | null;
@@ -38,15 +37,6 @@ const searchInput = useTemplateRef<HTMLInputElement>('searchInput');
 const createButton = useTemplateRef<HTMLButtonElement>('createButton');
 
 defineExpose({ focusCreate: () => createButton.value?.focus() });
-
-const filteredSources = computed(() => {
-    const search = query.value.trim().toLowerCase();
-    return props.sources.filter((source) =>
-        `${source.name} ${source.account} ${getGitProvider(source.provider).name}`
-            .toLowerCase()
-            .includes(search),
-    );
-});
 
 function clearSearch() {
     query.value = '';
@@ -88,6 +78,7 @@ function clearSearch() {
                     ref="searchInput"
                     v-model="query"
                     type="search"
+                    maxlength="255"
                     :placeholder="t('sidebar.search')"
                     autocomplete="off"
                     spellcheck="false"
@@ -138,11 +129,8 @@ function clearSearch() {
                     {{ t('sources.retry') }}
                 </button>
             </div>
-            <ul
-                v-if="!loading && filteredSources.length"
-                class="flex flex-col gap-1"
-            >
-                <li v-for="source in filteredSources" :key="source.id">
+            <ul v-if="!loading && sources.length" class="flex flex-col gap-1">
+                <li v-for="source in sources" :key="source.id">
                     <GitSourceItem
                         :source="source"
                         :selected="source.id === selectedId"
@@ -157,17 +145,13 @@ function clearSearch() {
             >
                 <p class="text-sm font-medium">
                     {{
-                        t(
-                            sources.length
-                                ? 'sidebar.noResults'
-                                : 'sidebar.empty',
-                        )
+                        t(query.trim() ? 'sidebar.noResults' : 'sidebar.empty')
                     }}
                 </p>
                 <p class="text-xs leading-relaxed text-muted">
                     {{
                         t(
-                            sources.length
+                            query.trim()
                                 ? 'sidebar.noResultsHint'
                                 : 'sidebar.emptyHint',
                         )
@@ -183,7 +167,7 @@ function clearSearch() {
                 <p class="text-center text-xs text-muted" role="status">
                     {{
                         t('sidebar.count', {
-                            count: filteredSources.length,
+                            count: sources.length,
                             total: pagination.total,
                         })
                     }}

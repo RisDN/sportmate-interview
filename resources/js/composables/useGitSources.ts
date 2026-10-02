@@ -1,5 +1,5 @@
 import { useHttp } from '@inertiajs/vue3';
-import { onBeforeUnmount, ref, shallowRef } from 'vue';
+import { onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { index } from '@/actions/App/Http/Controllers/GitSourceController';
 import { apiErrorMessage, isCancelledRequest } from '@/lib/api-errors';
 import { t } from '@/lib/translate';
@@ -13,15 +13,31 @@ export function useGitSources(showError: (message: string) => void) {
     const sources = shallowRef<GitSource[]>([]);
     const selectedSource = shallowRef<GitSource | null>(null);
     const pagination = shallowRef<GitSourcePagination | null>(null);
+    const query = ref('');
     const loading = ref(true);
     const failed = ref(false);
     const request = useHttp<Record<string, never>, GitSourcePage>({});
     let generation = 0;
     let retryPage: number | undefined;
+    let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+    function cancelPending() {
+        generation++;
+        request.cancel();
+        clearTimeout(searchTimer);
+        searchTimer = undefined;
+    }
+
+    function listUrl(page?: number) {
+        const search = query.value.trim() || undefined;
+        return index.url({
+            query: { page: page ?? (search ? 1 : undefined), search },
+        });
+    }
 
     async function load(page?: number, afterCreate = false) {
-        const currentGeneration = ++generation;
-        request.cancel();
+        cancelPending();
+        const currentGeneration = generation;
         loading.value = true;
         failed.value = false;
         retryPage = page;
@@ -33,22 +49,19 @@ export function useGitSources(showError: (message: string) => void) {
         }
 
         try {
-            await request.get(
-                index.url(page === undefined ? undefined : { query: { page } }),
-                {
-                    onSuccess(response) {
-                        if (currentGeneration !== generation) return;
-                        sources.value = response.data;
-                        pagination.value = response.meta;
-                        if (!selectedSource.value) {
-                            selectedSource.value = response.data[0] ?? null;
-                        }
-                    },
-                    onError() {
-                        reportFailure(t('sources.loadFailed'));
-                    },
+            await request.get(listUrl(page), {
+                onSuccess(response) {
+                    if (currentGeneration !== generation) return;
+                    sources.value = response.data;
+                    pagination.value = response.meta;
+                    if (!selectedSource.value) {
+                        selectedSource.value = response.data[0] ?? null;
+                    }
                 },
-            );
+                onError() {
+                    reportFailure(t('sources.loadFailed'));
+                },
+            });
         } catch (error) {
             if (!isCancelledRequest(error)) {
                 reportFailure(apiErrorMessage(error, 'sources.loadFailed'));
@@ -76,15 +89,26 @@ export function useGitSources(showError: (message: string) => void) {
         void load(retryPage);
     }
 
+    watch(
+        query,
+        () => {
+            cancelPending();
+            loading.value = true;
+            failed.value = false;
+            searchTimer = setTimeout(() => void load(1), 300);
+        },
+        { flush: 'sync' },
+    );
+
     onBeforeUnmount(() => {
-        generation++;
-        request.cancel();
+        cancelPending();
     });
 
     return {
         sources,
         selectedSource,
         pagination,
+        query,
         loading,
         failed,
         load,

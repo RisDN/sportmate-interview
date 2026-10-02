@@ -7,6 +7,7 @@ use App\Git\AccountType;
 use Carbon\CarbonImmutable;
 use Database\Factories\GitSourceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -18,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $account
  * @property string $normalized_account
  * @property string $name
+ * @property string $normalized_name
  * @property string $url
  * @property string|null $avatar_url
  * @property AccountType $account_type
@@ -41,6 +43,15 @@ class GitSource extends Model
     protected $attributes = ['sync_status' => 'idle', 'sync_revision' => 0];
 
     protected $hidden = ['sync_run_id', 'sync_checkpoint'];
+
+    /** @return Attribute<string, string> */
+    protected function name(): Attribute
+    {
+        return Attribute::make(set: fn (string $value): array => [
+            'name' => $value,
+            'normalized_name' => mb_strtolower($value),
+        ]);
+    }
 
     /** @return HasMany<RemoteRepository, $this> */
     public function repositories(): HasMany

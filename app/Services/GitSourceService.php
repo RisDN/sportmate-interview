@@ -17,12 +17,21 @@ final readonly class GitSourceService
     public function __construct(private GitProviderRegistry $providers, private GitSourceSyncService $sync) {}
 
     /** @return LengthAwarePaginator<int, GitSource> */
-    public function paginate(int $page): LengthAwarePaginator
+    public function paginate(int $page, string $search = ''): LengthAwarePaginator
     {
-        $total = GitSource::query()->count();
+        $query = GitSource::query();
+
+        if ($search !== '') {
+            $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($search)).'%';
+            $query->where(fn (Builder $query) => $query
+                ->whereRaw("normalized_account LIKE ? ESCAPE '!'", [$pattern])
+                ->orWhereRaw("normalized_name LIKE ? ESCAPE '!'", [$pattern]));
+        }
+
+        $total = (clone $query)->count();
         $lastPage = max(1, (int) ceil($total / self::PER_PAGE));
 
-        return GitSource::query()
+        return $query
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate(self::PER_PAGE, page: min(max(1, $page), $lastPage), total: $total);

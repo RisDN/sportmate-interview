@@ -20,13 +20,15 @@ class GitSourceController extends Controller
 
     public function index(Request $request, GitSourceService $sources): JsonResponse
     {
-        $value = $request->query->has('page') ? $request->query('page') : $request->cookie(self::PAGE_COOKIE);
+        $request->validate(['search' => ['nullable', 'string', 'max:255']]);
+        $search = $request->string('search')->trim()->toString();
+        $value = $request->query->has('page') ? $request->query('page') : ($search === '' ? $request->cookie(self::PAGE_COOKIE) : '1');
         $page = is_string($value) && ctype_digit($value)
             ? filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
             : false;
-        $sources = $sources->paginate($page === false ? 1 : $page);
+        $sources = $sources->paginate($page === false ? 1 : $page, $search);
 
-        return response()->json([
+        $response = response()->json([
             'data' => GitSourceResource::collection($sources->getCollection())->resolve($request),
             'meta' => [
                 'current_page' => $sources->currentPage(),
@@ -34,7 +36,13 @@ class GitSourceController extends Controller
                 'per_page' => $sources->perPage(),
                 'total' => $sources->total(),
             ],
-        ])->withCookie(cookie(
+        ]);
+
+        if ($search !== '') {
+            return $response;
+        }
+
+        return $response->withCookie(cookie(
             self::PAGE_COOKIE,
             (string) $sources->currentPage(),
             60 * 24 * 365,

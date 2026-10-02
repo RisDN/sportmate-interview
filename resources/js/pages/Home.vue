@@ -32,6 +32,7 @@ const {
     sources,
     selectedSource,
     pagination,
+    query,
     loading,
     failed,
     load,
@@ -60,7 +61,6 @@ const {
     refresh: refreshSync,
     startSync,
 } = useGitSourceSync(selectedSource, reconcile, refreshRepositories);
-const query = ref('');
 const mobileOpen = ref(false);
 const createOpen = ref(false);
 const announcement = ref('');
