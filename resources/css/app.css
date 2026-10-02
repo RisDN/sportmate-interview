@@ -2,3 +2,86 @@
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
+
+@theme inline {
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --color-background: var(--background);
+    --color-surface: var(--surface);
+    --color-sidebar: var(--sidebar);
+    --color-foreground: var(--foreground);
+    --color-muted: var(--muted);
+    --color-line: var(--line);
+    --color-hover: var(--hover);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-selection: var(--selection);
+    --color-selection-foreground: var(--selection-foreground);
+    --color-danger: var(--danger);
+}
+
+:root {
+    color-scheme: light dark;
+    --background: light-dark(#fbfcfd, #17191d);
+    --surface: light-dark(#ffffff, #25282e);
+    --sidebar: light-dark(#f3f4f6, #1e2025);
+    --foreground: light-dark(#202632, #edf0f6);
+    --muted: light-dark(#626d7e, #a1a9b7);
+    --line: light-dark(#dce0e7, #393e47);
+    --hover: light-dark(#e9ecf1, #2d3139);
+    --accent: light-dark(#245dcc, #a9c4ff);
+    --accent-foreground: light-dark(#ffffff, #152d5e);
+    --selection: light-dark(#e1eaff, #293d61);
+    --selection-foreground: light-dark(#204fa9, #c1d5ff);
+    --danger: light-dark(#bd3039, #ff9a9f);
+}
+
+:root[data-theme='light'] {
+    color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+    color-scheme: dark;
+}
+
+@layer base {
+    body {
+        @apply bg-background text-foreground;
+        font-optical-sizing: auto;
+    }
+
+    body:has(dialog[open]) {
+        overflow: hidden;
+    }
+
+    button:not(:disabled) {
+        cursor: pointer;
+        touch-action: manipulation;
+    }
+
+    ::selection {
+        background: var(--selection);
+        color: var(--selection-foreground);
+    }
+}
+
+@layer components {
+    .focus-ring {
+        @apply outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface;
+    }
+
+    .icon-button {
+        @apply inline-flex size-10 shrink-0 items-center justify-center rounded-xl text-muted transition-colors hover:bg-hover hover:text-foreground;
+    }
+
+    .primary-button {
+        @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition-[filter,transform] hover:brightness-95 active:scale-[0.98] motion-reduce:transform-none;
+    }
+
+    .secondary-button {
+        @apply inline-flex min-h-11 items-center justify-center rounded-xl border border-line bg-surface px-4 py-2.5 text-sm font-medium transition-colors hover:bg-hover;
+    }
+
+    .text-input {
+        @apply w-full min-w-0 rounded-xl border border-line bg-surface px-3.5 py-3 text-base text-foreground outline-none placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/20;
+    }
+}

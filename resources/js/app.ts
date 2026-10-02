@@ -1,7 +1,6 @@
 import { createInertiaApp } from '@inertiajs/vue3';
-
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+import { t } from '@/lib/translate';
 
 void createInertiaApp({
-    title: (title) => (title ? `${title} - ${appName}` : appName),
+    title: (title) => (title ? `${title} | ${t('app.name')}` : t('app.name')),
 });
