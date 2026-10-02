@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Git\GitHub\GitHubProvider;
+use App\Git\GitProvider;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +17,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(GitProvider::class, GitHubProvider::class);
     }
 
     /**
