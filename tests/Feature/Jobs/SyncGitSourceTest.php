@@ -50,6 +50,32 @@ function syncCommitPayload(string $date = '2026-09-30T12:00:00Z'): array
     return [['commit' => ['committer' => ['date' => $date]]]];
 }
 
+test('an initially empty repository search discovers a matching repository before synchronization finishes', function () {
+    $source = queuedGitSource();
+    $docs = GitHubPayload::repository(['name' => 'docs', 'full_name' => 'laravel/docs']);
+    Http::fake([
+        'https://api.github.com/orgs/laravel/repos?*' => Http::response([
+            $docs, GitHubPayload::repository(['id' => 124, 'name' => 'other', 'full_name' => 'laravel/other']),
+        ]),
+        'https://api.github.com/repos/laravel/docs' => Http::response($docs),
+        'https://api.github.com/repos/laravel/docs/pulls?*' => Http::response([]),
+        'https://api.github.com/repos/laravel/docs/commits?*' => Http::response(syncCommitPayload()),
+    ]);
+    $filters = ['gitSource' => $source, 'search' => 'DOCS', 'languages' => ['PHP'], 'sort' => 'stars_count', 'direction' => 'desc'];
+    $empty = $this->getJson(route('git-sources.repositories.index', $filters))->assertOk()
+        ->assertJsonCount(0, 'data')->assertJsonPath('languages', []);
+
+    runSyncReservations(4);
+
+    $snapshot = $this->getJson(route('git-sources.show', [...$filters, 'repository_page' => 1]))->assertOk()
+        ->assertJsonPath('data.sync_status', 'syncing')->assertJsonPath('repositories.meta.total', 1)
+        ->assertJsonPath('repositories.languages', ['PHP']);
+    expect($snapshot->json('repositories.fingerprint'))->not->toBe($empty->json('fingerprint'));
+    $this->getJson(route('git-sources.repositories.index', $filters))->assertOk()
+        ->assertJsonPath('data.0.name', 'docs')->assertJsonPath('fingerprint', $snapshot->json('repositories.fingerprint'));
+    Http::assertSentCount(4);
+});
+
 test('each reservation makes at most one request and publishes only complete repositories before final success', function () {
     $this->travelTo('2026-10-02 12:00:00 UTC');
     $source = queuedGitSource();

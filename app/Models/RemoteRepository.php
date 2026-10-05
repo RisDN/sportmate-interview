@@ -6,6 +6,7 @@ use App\Services\GitProviderRegistry;
 use Carbon\CarbonImmutable;
 use Database\Factories\RemoteRepositoryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,7 +15,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $external_id
  * @property int $git_source_id
  * @property string $name
+ * @property string $normalized_name
  * @property string|null $description
+ * @property string|null $normalized_description
  * @property int $stars_count
  * @property int $issues_count
  * @property int $pull_requests_count
@@ -39,7 +42,25 @@ class RemoteRepository extends Model
 
     protected $keyType = 'string';
 
-    protected $hidden = ['sync_version'];
+    protected $hidden = ['sync_version', 'normalized_name', 'normalized_description'];
+
+    /** @return Attribute<string, string> */
+    protected function name(): Attribute
+    {
+        return Attribute::make(set: fn (string $value): array => [
+            'name' => $value,
+            'normalized_name' => mb_strtolower($value),
+        ]);
+    }
+
+    /** @return Attribute<string|null, string|null> */
+    protected function description(): Attribute
+    {
+        return Attribute::make(set: fn (?string $value): array => [
+            'description' => $value,
+            'normalized_description' => $value === null ? null : mb_strtolower($value),
+        ]);
+    }
 
     /** @return BelongsTo<GitSource, $this> */
     public function owner(): BelongsTo

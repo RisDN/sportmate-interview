@@ -133,8 +133,35 @@ tulajdon vagy új bejelentkezési folyamat.
   elindítja vagy sikertelen futás után folytatja a szinkront. Aktív futásnál
   új job nélkül visszaadja az aktuális állapotot.
 - `GET /api/git-sources/{gitSource}/repositories?page=2`: tízelemű, SQL-szinten
-  lapozott `data` és `meta`. Rendezés: kis/nagybetűtől független név, majd
-  external ID. A listázás és a profil olvasása nem hívja a GitHubot.
+  lapozott `data` és `meta`, valamint a látható sorok `fingerprint` értéke és
+  a forrás teljes nyelvválasztékát tartalmazó `languages` lista. Alaprendezés:
+  kis/nagybetűtől független név, majd external ID. A listázás és a profil
+  olvasása nem hívja a GitHubot.
+
+A repositoryk keresése és szűrése az SQL-lekérdezésben, a lapozás előtt történik:
+
+- `search=docs`: kis/nagybetűtől független részszöveges keresés a névben vagy a
+  leírásban; a `%` és `_` karakterek is szó szerint kereshetők.
+- `languages[]=PHP&languages[]=TypeScript`: a kiválasztott fő nyelvek
+  bármelyikének megfelelő repositoryk. `without_language=1` a nyelv nélküli
+  repositorykat is engedi; önmagában csak azokat mutatja. Kijelölt nyelv és
+  `without_language` nélkül nincs nyelvszűrés.
+- `sort`: `name` (alapértelmezett), `issues_count`, `pull_requests_count`,
+  `last_committed_at`, `stars_count` vagy `forks_count`.
+- `direction`: `asc` (alapértelmezett) vagy `desc`. A commit nélküli repositoryk
+  dátum szerinti rendezéskor mindkét irányban a lista végére kerülnek.
+
+A frontend minden feltételváltozást 400 ms debounce után küld el, és az első
+találati oldalra lép. GitSource-váltáskor a feltételek alaphelyzetbe állnak.
+A nyelvválasztó az adott forrás teljes mentett állományának fő nyelveit mutatja,
+kereséstől és lapozástól függetlenül; a `null` érték a „Not specified” opció.
+Több nyelv kiválasztása VAGY, a szöveg- és nyelvfeltételek összekapcsolása ÉS.
+
+A profil `GET /api/git-sources/{gitSource}?repository_page=1` lekérése ugyanezen
+szűrőparaméterekkel a `repositories` objektumban `fingerprint`, `meta` és
+`languages` adatokat is ad. A szinkronfigyelés ezeket a feltételeket követi:
+az újonnan mentett találatok üres keresési eredményből is automatikusan
+megjelennek, a nyelvválaszték pedig változatlan látható lista mellett is frissül.
 
 A nyilvános időbélyegek Unix-másodpercek vagy `null`. A kliens a last sync
 és last commit dátumát `new Date(timestamp * 1000).toDateString()` segítségével

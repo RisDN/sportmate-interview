@@ -50,11 +50,13 @@ test('the source snapshot matches the displayed repository page without loading 
     $response->assertOk()->assertJsonPath('repositories', [
         'fingerprint' => $page->json('fingerprint'),
         'meta' => ['current_page' => 2, 'last_page' => 4, 'per_page' => 10, 'total' => 31],
+        'languages' => [null],
     ])->assertJsonMissingPath('repositories.data');
     expect($page->json('fingerprint'))->toBeString()->not->toBeEmpty();
-    expect($queries)->toHaveCount(2);
+    expect($queries)->toHaveCount(3);
     expect($queries[0])->toContain('count(*)');
     expect($queries[1])->toContain('limit 10 offset 10');
+    expect($queries[2])->toContain('select distinct "language"');
     Http::assertNothingSent();
 });
 
@@ -226,6 +228,7 @@ test('empty source snapshots share the empty repository page fingerprint', funct
     $response->assertOk()->assertJsonPath('repositories', [
         'fingerprint' => $page->json('fingerprint'),
         'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 10, 'total' => 0],
+        'languages' => [],
     ]);
     Http::assertNothingSent();
 });
@@ -240,5 +243,85 @@ test('changes to another source do not invalidate the selected source snapshot',
 
     $response->assertOk()->assertJsonPath('repositories.fingerprint', $page->json('fingerprint'))
         ->assertJsonPath('repositories.meta.total', 1);
+    Http::assertNothingSent();
+});
+
+test('polling snapshots apply every filter and the same ordering to the displayed page', function () {
+    $source = GitSource::factory()->create(['sync_status' => SyncStatus::Syncing]);
+    RemoteRepository::factory()->count(12)->for($source, 'owner')
+        ->sequence(fn (Sequence $sequence) => ['name' => sprintf('docs-%02d', $sequence->index), 'stars_count' => $sequence->index])
+        ->create(['language' => 'PHP']);
+    RemoteRepository::factory()->for($source, 'owner')->create(['name' => 'docs-rust', 'language' => 'Rust', 'stars_count' => 50]);
+    RemoteRepository::factory()->for($source, 'owner')->create(['name' => 'unrelated', 'language' => null, 'stars_count' => 100]);
+    $filters = ['gitSource' => $source, 'search' => 'DOCS', 'languages' => ['PHP'], 'sort' => 'stars_count', 'direction' => 'desc'];
+    $page = $this->getJson(route('git-sources.repositories.index', [...$filters, 'page' => 2]))->assertOk();
+
+    $snapshot = $this->getJson(route('git-sources.show', [...$filters, 'repository_page' => 2]));
+
+    $page->assertJsonPath('data.*.name', ['docs-01', 'docs-00']);
+    $snapshot->assertOk()->assertJsonPath('repositories.fingerprint', $page->json('fingerprint'))
+        ->assertJsonPath('repositories.meta', ['current_page' => 2, 'last_page' => 2, 'per_page' => 10, 'total' => 12])
+        ->assertJsonPath('repositories.languages', ['PHP', 'Rust', null]);
+    Http::assertNothingSent();
+});
+
+test('polling notices repositories entering and leaving active name description and language filters', function (string $name, string $field, ?string $before, string $matching, ?string $after) {
+    $source = GitSource::factory()->create(['sync_status' => SyncStatus::Syncing]);
+    $repository = RemoteRepository::factory()->for($source, 'owner')->create([
+        'name' => $name, 'description' => null, 'language' => 'PHP', $field => $before,
+    ]);
+    $filters = ['gitSource' => $source, 'search' => 'docs', 'languages' => ['PHP']];
+    $empty = $this->getJson(route('git-sources.repositories.index', $filters))->assertOk()->assertJsonCount(0, 'data');
+    $repository->update([$field => $matching]);
+
+    $entered = $this->getJson(route('git-sources.show', [...$filters, 'repository_page' => 1]));
+
+    $entered->assertOk()->assertJsonPath('repositories.meta.total', 1);
+    expect($entered->json('repositories.fingerprint'))->not->toBe($empty->json('fingerprint'));
+    $this->getJson(route('git-sources.repositories.index', $filters))->assertOk()
+        ->assertJsonPath('data.0.external_id', $repository->external_id)
+        ->assertJsonPath('fingerprint', $entered->json('repositories.fingerprint'));
+
+    $repository->update([$field => $after]);
+    $this->getJson(route('git-sources.show', [...$filters, 'repository_page' => 1]))->assertOk()
+        ->assertJsonPath('repositories.meta.total', 0)->assertJsonPath('repositories.fingerprint', $empty->json('fingerprint'));
+    Http::assertNothingSent();
+})->with([
+    'name' => ['docs', 'name', 'unrelated', 'docs-new', 'renamed'],
+    'description' => ['reference', 'description', null, 'docs reference', null],
+    'language' => ['docs', 'language', 'Rust', 'PHP', 'Rust'],
+]);
+
+test('polling detects an off-page repository moving into the selected metric order', function () {
+    $source = GitSource::factory()->create(['sync_status' => SyncStatus::Syncing]);
+    $repositories = RemoteRepository::factory()->count(11)->for($source, 'owner')
+        ->sequence(fn (Sequence $sequence) => ['name' => sprintf('docs-%02d', $sequence->index), 'stars_count' => $sequence->index])
+        ->create(['language' => 'PHP']);
+    $filters = ['gitSource' => $source, 'search' => 'docs', 'languages' => ['PHP'], 'sort' => 'stars_count', 'direction' => 'desc'];
+    $page = $this->getJson(route('git-sources.repositories.index', $filters))->assertOk();
+    $repositories->first()->update(['stars_count' => 100]);
+
+    $snapshot = $this->getJson(route('git-sources.show', [...$filters, 'repository_page' => 1]));
+
+    $snapshot->assertOk()->assertJsonPath('repositories.meta.total', 11);
+    expect($snapshot->json('repositories.fingerprint'))->not->toBe($page->json('fingerprint'));
+    $this->getJson(route('git-sources.repositories.index', $filters))->assertOk()
+        ->assertJsonPath('data.0.name', 'docs-00')->assertJsonPath('data.9.name', 'docs-02')
+        ->assertJsonPath('fingerprint', $snapshot->json('repositories.fingerprint'));
+    Http::assertNothingSent();
+});
+
+test('polling refreshes language options even when the filtered rows and their fingerprint stay unchanged', function () {
+    $source = GitSource::factory()->create(['sync_status' => SyncStatus::Syncing]);
+    RemoteRepository::factory()->for($source, 'owner')->create(['name' => 'docs', 'language' => 'PHP']);
+    $offPage = RemoteRepository::factory()->for($source, 'owner')->create(['name' => 'unrelated', 'description' => null, 'language' => 'Rust']);
+    $filters = ['gitSource' => $source, 'search' => 'docs'];
+    $page = $this->getJson(route('git-sources.repositories.index', $filters))->assertOk()->assertJsonPath('languages', ['PHP', 'Rust']);
+    $offPage->update(['language' => 'TypeScript']);
+
+    $snapshot = $this->getJson(route('git-sources.show', [...$filters, 'repository_page' => 1]));
+
+    $snapshot->assertOk()->assertJsonPath('repositories.fingerprint', $page->json('fingerprint'))
+        ->assertJsonPath('repositories.meta.total', 1)->assertJsonPath('repositories.languages', ['PHP', 'TypeScript']);
     Http::assertNothingSent();
 });

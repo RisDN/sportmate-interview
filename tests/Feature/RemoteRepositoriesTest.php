@@ -33,9 +33,10 @@ test('repository pagination reads only ten rows from a source with three thousan
     $response->assertOk()->assertJsonCount(10, 'data')->assertJsonPath('meta', [
         'current_page' => 2, 'last_page' => 300, 'per_page' => 10, 'total' => 3000,
     ])->assertJsonPath('data.0.name', 'repository-0010')->assertJsonPath('data.9.name', 'repository-0019');
-    expect($queries)->toHaveCount(2);
+    expect($queries)->toHaveCount(3);
     expect($queries[0])->toContain('count(*)');
     expect($queries[1])->toContain('order by "name" asc, "external_id" asc limit 10 offset 10');
+    expect($queries[2])->toContain('select distinct "language"');
     expect(array_unique(array_column($response->json('data'), 'git_source_id')))->toBe([(string) $source->id]);
     Http::assertNothingSent();
 });
@@ -77,6 +78,7 @@ test('empty repository lists return a single empty page', function () {
     $this->getJson(route('git-sources.repositories.index', ['gitSource' => $source, 'page' => 300]))
         ->assertOk()->assertExactJson([
             'fingerprint' => hash('sha256', '[]'),
+            'languages' => [],
             'data' => [], 'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 10, 'total' => 0],
         ]);
 });

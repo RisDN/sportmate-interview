@@ -47,6 +47,8 @@ const {
 const selectedId = computed(() => selectedSource.value?.id ?? null);
 const {
     repositories,
+    filters: repositoryFilters,
+    languages: repositoryLanguages,
     pagination: repositoryPagination,
     loading: repositoriesLoading,
     refreshing: repositoriesRefreshing,
@@ -231,7 +233,9 @@ onBeforeUnmount(() =>
                     />
                     <RepositoryList
                         ref="repositoryList"
+                        v-model:filters="repositoryFilters"
                         :repositories="repositories"
+                        :languages="repositoryLanguages"
                         :pagination="repositoryPagination"
                         :loading="repositoriesLoading"
                         :refreshing="repositoriesRefreshing"

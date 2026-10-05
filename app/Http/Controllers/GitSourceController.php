@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\RepositoryFiltersRequest;
 use App\Http\Requests\StoreGitSourceRequest;
 use App\Http\Resources\GitSourceResource;
 use App\Http\Resources\RemoteRepositoryPageResource;
@@ -16,7 +17,7 @@ class GitSourceController extends Controller
 {
     public const PAGE_COOKIE = 'git_sources_page';
 
-    public function show(Request $request, GitSource $gitSource, RemoteRepositoryService $repositories): JsonResponse
+    public function show(RepositoryFiltersRequest $request, GitSource $gitSource, RemoteRepositoryService $repositories): JsonResponse
     {
         return DB::transaction(function () use ($request, $gitSource, $repositories): JsonResponse {
             $source = $gitSource->fresh();
@@ -24,12 +25,15 @@ class GitSourceController extends Controller
             $response = ['data' => (new GitSourceResource($source))->resolve($request)];
 
             if ($request->query->has('repository_page')) {
-                $value = $request->query('repository_page');
-                $page = is_string($value) && ctype_digit($value)
-                    ? filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])
-                    : false;
-                $snapshot = (new RemoteRepositoryPageResource($repositories->paginate($source, $page === false ? 1 : $page)))->toArray($request);
-                $response['repositories'] = ['fingerprint' => $snapshot['fingerprint'], 'meta' => $snapshot['meta']];
+                $snapshot = (new RemoteRepositoryPageResource(
+                    $repositories->paginate($source, $request->repositoryPage('repository_page'), $request->filters()),
+                    $repositories->languages($source),
+                ))->toArray($request);
+                $response['repositories'] = [
+                    'fingerprint' => $snapshot['fingerprint'],
+                    'meta' => $snapshot['meta'],
+                    'languages' => $snapshot['languages'],
+                ];
             }
 
             return response()->json($response);

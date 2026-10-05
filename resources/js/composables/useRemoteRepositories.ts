@@ -8,12 +8,25 @@ import type { PaginationMeta } from '@/types/pagination';
 import type {
     RemoteRepository,
     RemoteRepositoryPage,
+    RepositoryFilters,
     RepositoryObservation,
     RepositorySnapshot,
 } from '@/types/remote-repository';
 
+function defaultFilters(): RepositoryFilters {
+    return {
+        search: '',
+        languages: [],
+        without_language: false,
+        sort: 'name',
+        direction: 'asc',
+    };
+}
+
 export function useRemoteRepositories(sourceId: Ref<string | null>) {
     const repositories = shallowRef<RemoteRepository[]>([]);
+    const filters = ref<RepositoryFilters>(defaultFilters());
+    const languages = shallowRef<(string | null)[]>([]);
     const pagination = shallowRef<PaginationMeta | null>(null);
     const loading = ref(false);
     const refreshing = ref(false);
@@ -25,16 +38,33 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
     let inFlight = false;
     let refreshPending = false;
     let disposed = false;
+    let resettingFilters = false;
+    let filterTimer: ReturnType<typeof setTimeout> | undefined;
+
+    function cancelPending() {
+        generation++;
+        request.cancel();
+        clearTimeout(filterTimer);
+        filterTimer = undefined;
+        inFlight = false;
+        refreshPending = false;
+        observation.value = null;
+    }
 
     async function load(page = 1, background = false) {
         const id = sourceId.value;
-        if (!id || disposed) return;
+        if (!id || disposed || filterTimer !== undefined) return;
         if (background && inFlight) {
             refreshPending = true;
             return;
         }
 
         const currentGeneration = ++generation;
+        const appliedFilters: RepositoryFilters = {
+            ...filters.value,
+            search: filters.value.search.trim(),
+            languages: [...filters.value.languages],
+        };
         request.cancel();
         requestedPage = page;
         inFlight = true;
@@ -50,17 +80,22 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
 
         try {
             await request.get(
-                index.url({ gitSource: Number(id) }, { query: { page } }),
+                index.url(
+                    { gitSource: Number(id) },
+                    { query: { page, ...appliedFilters } },
+                ),
                 {
                     onSuccess(response) {
                         if (!isCurrent()) return;
                         repositories.value = response.data;
                         pagination.value = response.meta;
+                        languages.value = response.languages;
                         requestedPage = response.meta.current_page;
                         observation.value = {
                             sourceId: id,
                             page: response.meta.current_page,
                             fingerprint: response.fingerprint,
+                            filters: appliedFilters,
                         };
                         error.value = '';
                     },
@@ -99,7 +134,7 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
         snapshot: RepositorySnapshot,
         observed: RepositoryObservation,
     ) {
-        // A list load or page/source change invalidates earlier status responses.
+        // A list load or filter/page/source change invalidates earlier snapshots.
         if (
             inFlight ||
             observation.value !== observed ||
@@ -107,6 +142,8 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
         )
             return;
 
+        // Off-page repositories can add languages without changing visible rows.
+        languages.value = snapshot.languages;
         if (
             snapshot.fingerprint !== observed.fingerprint ||
             snapshot.meta.current_page !== observed.page
@@ -118,33 +155,52 @@ export function useRemoteRepositories(sourceId: Ref<string | null>) {
     }
 
     watch(
+        filters,
+        () => {
+            if (resettingFilters || disposed) return;
+            cancelPending();
+            requestedPage = 1;
+            error.value = '';
+            refreshing.value = false;
+            loading.value = sourceId.value !== null;
+            if (!sourceId.value) return;
+
+            filterTimer = setTimeout(() => {
+                filterTimer = undefined;
+                void load(1);
+            }, 400);
+        },
+        { deep: true, flush: 'sync' },
+    );
+
+    watch(
         sourceId,
         () => {
-            generation++;
-            request.cancel();
-            inFlight = false;
-            refreshPending = false;
+            cancelPending();
+            resettingFilters = true;
+            filters.value = defaultFilters();
+            resettingFilters = false;
             requestedPage = 1;
-            observation.value = null;
             repositories.value = [];
+            languages.value = [];
             pagination.value = null;
             error.value = '';
             loading.value = false;
             refreshing.value = false;
             if (sourceId.value) void load(1);
         },
-        { immediate: true },
+        { immediate: true, flush: 'sync' },
     );
 
     onBeforeUnmount(() => {
         disposed = true;
-        generation++;
-        refreshPending = false;
-        request.cancel();
+        cancelPending();
     });
 
     return {
         repositories,
+        filters,
+        languages,
         pagination,
         loading,
         refreshing,

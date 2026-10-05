@@ -2,14 +2,19 @@
 import { PhGitBranch } from '@phosphor-icons/vue';
 import { computed, useTemplateRef } from 'vue';
 import RepositoryCard from '@/components/repositories/RepositoryCard.vue';
+import RepositoryFilters from '@/components/repositories/RepositoryFilters.vue';
 import AppPagination from '@/components/ui/AppPagination.vue';
 import { t } from '@/lib/translate';
 import type { GitSourceSyncStatus } from '@/types/git-source';
 import type { PaginationMeta } from '@/types/pagination';
-import type { RemoteRepository } from '@/types/remote-repository';
+import type {
+    RemoteRepository,
+    RepositoryFilters as RepositoryFilterValues,
+} from '@/types/remote-repository';
 
 const props = defineProps<{
     repositories: readonly RemoteRepository[];
+    languages: readonly (string | null)[];
     pagination: PaginationMeta | null;
     loading: boolean;
     refreshing: boolean;
@@ -17,8 +22,17 @@ const props = defineProps<{
     syncStatus: GitSourceSyncStatus;
     syncActive: boolean;
 }>();
+const filters = defineModel<RepositoryFilterValues>('filters', {
+    required: true,
+});
 defineEmits<{ page: [page: number]; retry: [] }>();
 const heading = useTemplateRef<HTMLHeadingElement>('heading');
+const filtered = computed(
+    () =>
+        filters.value.search.trim() !== '' ||
+        filters.value.languages.length > 0 ||
+        filters.value.without_language,
+);
 
 defineExpose({
     focusHeading() {
@@ -34,6 +48,7 @@ defineExpose({
 });
 
 const emptyTitle = computed(() => {
+    if (filtered.value) return t('repositories.noResults');
     if (props.syncActive) return t('repositories.pending');
     return t(
         props.syncStatus === 'succeeded'
@@ -42,6 +57,12 @@ const emptyTitle = computed(() => {
     );
 });
 const emptyHint = computed(() => {
+    if (filtered.value)
+        return t(
+            props.syncActive
+                ? 'repositories.noResultsSyncHint'
+                : 'repositories.noResultsHint',
+        );
     if (props.syncActive) return t('repositories.pendingHint');
     return t(
         props.syncStatus === 'succeeded'
@@ -66,18 +87,28 @@ const emptyHint = computed(() => {
             >
                 {{ t('repositories.title') }}
             </h2>
-            <p v-if="pagination" class="text-sm text-muted" role="status">
+            <p
+                v-if="pagination && !loading"
+                class="text-sm text-muted"
+                role="status"
+            >
                 {{
-                    t('repositories.count', {
-                        count: repositories.length,
-                        total: pagination.total,
-                    })
+                    t(
+                        filtered
+                            ? 'repositories.filteredCount'
+                            : 'repositories.count',
+                        {
+                            count: repositories.length,
+                            total: pagination.total,
+                        },
+                    )
                 }}
             </p>
             <p v-if="syncActive" class="text-xs text-muted">
                 {{ t('repositories.progress') }}
             </p>
         </div>
+        <RepositoryFilters v-model:filters="filters" :languages="languages" />
         <div
             v-if="error"
             class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/35 bg-surface p-4"

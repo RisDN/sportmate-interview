@@ -2,8 +2,8 @@
 
 # Modellek
 
-- 6.1 Sol Ultra
-- 6 Astra Ultra
+- GPT 6.1 Sol Ultra 1.5x speed
+- GPT 6 Astra Ultra 1.5x speed
 
 # Mcp-k
 

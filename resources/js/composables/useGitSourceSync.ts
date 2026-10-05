@@ -82,7 +82,10 @@ export function useGitSourceSync(
                     { gitSource: Number(id) },
                     {
                         query: observed
-                            ? { repository_page: observed.page }
+                            ? {
+                                  repository_page: observed.page,
+                                  ...observed.filters,
+                              }
                             : undefined,
                     },
                 ),
