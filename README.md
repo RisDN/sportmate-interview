@@ -1,276 +1,109 @@
-# sportmate-interview
+# SportMate interjúfeladat
 
-Laravel 13 projekt Vue 3, Inertia 3, TypeScript és Tailwind CSS 4 alappal.
-A kezdőoldalon Git source-ok oldalsávja, kijelölése és hozzáadó modálja érhető el;
-a forrásokat SQLite tárolja, a health endpoint: `/up`.
+A docs mappában minden kézzel írt a hitelesség érdekében, a NOTES.md-ben érdemes kezdeni.
 
-Az oldalsáv a REST API-ból egyszerre 10 forrást tölt be, legújabbal kezdve.
-Az oldal egy évig érvényes, titkosított HttpOnly `git_sources_page` cookie-ban
-marad meg. A kereső csak az aktuális oldal elemeit szűri. A kijelölés lapozáskor
-megmarad; újratöltéskor a visszaállított oldal első forrása lesz kijelölve.
-Az adatbázis üresen indul, nincs mock seed. A forrás létrehozásakor a backend
-ellenőrzi a GitHub-fiókot, elmenti a profiladatait, és ugyanabban az SQLite
-tranzakcióban queue-ba teszi az első repository-szinkront. Meglévő forrásnál
-a profil alatti Sync gomb indítja vagy hiba után folytatja a munkát.
+⚠️⚠️ AI SLOP LENT ⚠️⚠️
 
-A szerializálható `GitSource` típust a `resources/js/types/git-source.ts`
-definiálja; a provider ikonja külön frontend registryben található.
-Az angol feliratok és hibaüzenetek a
-`resources/js/locales/en.ts` szótárban bővíthetők; a típusos `t()` segéd
-(`resources/js/lib/translate.ts`) kulcsokkal és behelyettesíthető paraméterekkel
-adja vissza őket.
+A [próbafeladat](https://github.com/sportmatehu/medior-interview) megoldása: GitHub-felhasználók és szervezetek publikus repositoryjainak szinkronizálása, kereshető helyi listával.
 
-A jobb felső sarok kerek ikongombja kattintásra világos és sötét téma között vált.
-Az első választásig a böngésző témáját követi; a választás egy évig érvényes
-`theme` cookie-ba kerül.
-A szerver ebből állítja be a HTML témáját és az Inertia propot, így a mentett
-megjelenés már az első kirajzoláskor érvényes.
+Egy GitHub-fiók hozzáadása után az alkalmazás háttérben tölti le az adatokat. A már elmentett repositoryk közben böngészhetők, kereshetők és rendezhetők; a felület jelzi a szinkron állapotát és az esetleges hibákat. A listázás a helyi adatbázisból dolgozik, így a keresések nem indítanak új GitHub-kérést.
 
-PHP 8.5, Composer 2 és Node.js 22.18+ szükséges.
-A repository-keresések kérések között megosztott memóriacache-éhez Redis és a
-PHP `redis` bővítménye szükséges. A mellékelt Docker Compose szolgáltatás
-csak localhoston, alapértelmezetten a 6380-as porton érhető el:
+Az alap a Laravel hivatalos Vue starter kitje; a projekt Laravel 13, Vue 3, Inertia 3 és SQLite használatával készült.
 
-```sh
-docker compose up -d --wait repository-cache
-```
+![Az alkalmazás sötét témában](docs/imgs/01-dark-overview.png)
 
-A szolgáltatás legfeljebb 128 MB memóriát használ, lemezes perzisztencia nélkül.
-Újraindítása után a cache a következő keresésekkel töltődik fel.
+## Elindítás
+
+Szükséges környezet: PHP 8.4.1 vagy újabb 8.x verzió SQLite-támogatással, Composer 2 és Node.js 22.x, legalább 22.18-as verzióval. Az első szinkronhoz internetkapcsolat kell. Külön adatbázis-szervert vagy Redist az alapműködéshez nem kell telepíteni.
+
+Friss letöltés után, a projekt könyvtárában:
 
 ```sh
 composer setup
 composer dev
 ```
 
-A `composer setup` telepíti a függőségeket, előkészíti a `.env` fájlt és az SQLite
-adatbázist, futtatja a migrációkat, majd elkészíti a frontend buildet.
+A `setup` telepíti a függőségeket, előkészíti a `.env` fájlt és az SQLite-adatbázist, futtatja a migrációkat, majd elkészíti a frontend buildet. Első telepítésre szolgál: új alkalmazáskulcsot is generál. Későbbi indításokhoz elég a `composer dev`.
+
+Az alkalmazás a **http://localhost:8000** címen érhető el. A `composer dev` a webes kiszolgáló és a frontend mellett a háttérfeladatokat feldolgozó queue listenert is elindítja. Az adatbázis kezdetben üres; az első GitHub-fiókot a felületen lehet hozzáadni.
+
+### GitHub-token – opcionális
+
+A `.env` fájlban megadható egy `GITHUB_PAT`. Token nélkül is működik a szinkron, de a GitHub szűkebb API-kerete miatt hamarabb várakozásra kényszerülhet, különösen sok repository esetén. Érvényes tokennel több kérés fér a keretbe. A token a szerveren marad; a jelenlegi megoldás tokennel is csak publikus repositorykat szinkronizál.
+
+Ha futás közben változik a beállítás, a `php artisan config:clear` után a `composer dev` folyamatot is újra kell indítani.
+
+### Redis – opcionális gyorsítás
+
+**A kipróbáláshoz nem szükséges Redis.** A tartós adatok SQLite-ban vannak. A Redis az ismétlődő repository-keresések eredményét tárolja átmenetileg; ha nem érhető el, az alkalmazás közvetlenül az SQLite-adatbázisból állítja össze a találatokat. A keresés és a szinkron ilyenkor is működik.
+
+Ha a megosztott cache-t is kipróbálnád, engedélyezd a PHP `redis` bővítményét, és indíts Redist, például a mellékelt Docker Compose szolgáltatással:
+
+```sh
+docker compose up -d --wait repository-cache
+```
+
+A `.env.example` már ehhez a helyi Redishez van beállítva. Ez a parancs csak a cache-t indítja; az alkalmazást továbbra is a `composer dev` futtatja.
+
+## Mit érdemes kipróbálni?
+
+1. **GitHub-fiók felvétele.** Adj hozzá egy létező felhasználót vagy szervezetet. A szerver ellenőrzi a fiókot, elmenti a profilját, és elindítja az első szinkront. Hibás vagy már felvett fióknál visszajelzést ad.
+2. **Szinkron követése.** A repositoryk feldolgozás közben fokozatosan jelennek meg. Látszik a folyamat állapota, az utolsó sikeres szinkron és az esetleges hiba. API-korlátnál a rendszer várakozik, majd folytatja a munkát.
+3. **Keresés és szűrés.** Keress a repositoryk nevében vagy leírásában, majd válassz egy vagy több programozási nyelvet. A feltételek együtt használhatók, és a teljes mentett listára érvényesek, nem csak az éppen látható oldalra. Az oldalsáv keresője az összes mentett GitHub-forrás között keres.
+4. **Rendezés és lapozás.** Rendezhetsz név, nyitott issue-k, nyitott PR-ok, utolsó commit, csillagok vagy forkok szerint, mindkét irányban. A repositoryknál külön láthatók a fontosabb adatok és az archivált állapot.
+5. **Újraszinkronizálás.** A Sync gombbal frissíthetők a mentett adatok. Az ismert repositoryk frissülnek, nem keletkezik belőlük új példány. Sikertelen futás után a szinkron a mentett feldolgozási ponttól folytatható.
+
+További képek a [docs/imgs](docs/imgs/) könyvtárban találhatók.
+
+## Főbb döntések és kompromisszumok
+
+- **Helyi adatok, háttérben futó szinkron.** A GitHub elérése külön integrációs rétegbe került; a felületet kiszolgáló lekérdezések a mentett adatokat olvassák. A hosszabb szinkron queue-ban fut. Jelenleg a GitHub támogatott, de a provider interfész előkészíti további szolgáltatók bekötését.
+- **SQLite az egyszerű indításhoz.** A projekt kipróbálásához nem kell külön adatbázis-szerver. Az adatok és a queue is itt maradnak meg. A cache érvénytelenítéséhez SQLite-triggerek is tartoznak, ezért más adatbázisra váltáskor ezeket át kell dolgozni.
+- **Folytatható feldolgozás.** A szinkron oldalanként dolgozza fel a GitHub listáját, és elmenti, hol tart. Forrásonként egy aktív futás engedélyezett; az ismételt indítást és a párhuzamos írásokat külön védelem kezeli. Az átmeneti hibák korlátozott újrapróbálást kapnak, az API-korlát miatti várakozás nem fogyasztja ezt a keretet. A kéréseknek és a háttérfeladatoknak is van időkorlátjuk.
+- **Pontosabb adatok, több API-hívás.** A nyitott issue-k és PR-ok külön szerepelnek, az utolsó commit dátuma pedig a default branch tényleges commitjából származik. Ezekhez további GitHub-kérések szükségesek, ezért nagyobb fióknál hosszabb szinkron és kvótavárakozás is előfordulhat.
+
+### Azonosítók és indexek
+
+A duplikáció elleni védelmet az adatbázis is biztosítja:
+
+- A forrásoknál a `provider + remote_id`, illetve a `provider + normalized_account` egyedisége akadályozza meg ugyanannak a fióknak a többszöri felvételét.
+- A repository elsődleges kulcsa a providerrel kiegészített külső azonosító, például `github:123`. Ez átnevezéskor is ugyanazt a repositoryt azonosítja.
+- A `(git_source_id, name, external_id)` index a forráson belüli, név szerinti lapozást támogatja; az azonos nevek sorrendjét a külső azonosító teszi egyértelművé.
+- A források `(created_at, id)` indexe a legújabbal kezdődő, stabil sorrendű listázást támogatja.
+
+Ezek az indexek az egyediséget és az alaplisták lekérdezését szolgálják. A névben és leírásban végzett részszöveges kereséshez nincs külön teljes szöveges keresőindex.
+
+## Ami jelenleg nincs benne
+
+- Nincs időzített automatikus szinkron vagy webhook. Szinkron felvételkor és kézi indításra történik; a már elindult feladat szükség esetén automatikusan újrapróbálkozik.
+- A GitHubról eltűnt vagy priváttá vált repository korábbi helyi rekordja megmarad. Ezek külön jelölése vagy törlése még nincs megoldva.
+- A keresés névben és leírásban működik, a repositoryk README-tartalmát nem tölti le és nem keresi.
+- Nincs felhasználónként elkülönített forráslista vagy privát repositoryk kezelése. A JSON-végpontok a webalkalmazást szolgálják ki, önálló mobilos hitelesítés nem készült.
+
+## Ellenőrzés
+
+A backendtesztek futtatása:
+
+```sh
+php artisan test
+```
+
+A teljes kódellenőrzés, frontend- és PHP-típusellenőrzéssel, formázásellenőrzéssel és tesztekkel:
 
 ```sh
 composer ci:check
 ```
 
-Az ellenőrzés frontend lintet, formázást és típusellenőrzést, valamint Pint,
-Larastan és Pest ellenőrzéseket futtat.
+A tesztek többek között a forrás felvételét, a GitHub-válaszok feldolgozását, a létrehozást és frissítést, a duplikációvédelmet, a lapozást, a szinkron hibáit és a cache működését ellenőrzik. A GitHub-hívásokat tesztválaszok helyettesítik; a tesztek külön SQLite memória-adatbázist és izolált cache-t használnak, így GitHub-token és futó Redis nélkül is futtathatók.
 
-## Szerveroldali Git-providerek
+A frontend build külön a `npm run build` paranccsal ellenőrizhető; ezt az első telepítéskor a `composer setup` is lefuttatja.
 
-Az `App\Git\GitProvider` szinkron, csak olvasó szerződését a
-`App\Git\GitHub\GitHubProvider` valósítja meg. A Laravel konténer a közös
-interface-hez ezt az implementációt rendeli. Alkalmazáskódban a providert
-konstruktorparaméterként lehet injektálni; az alábbi példa Tinkerben is futtatható:
+## Ráfordítás, AI-használat és folytatás
 
-```php
-use App\Git\GitProvider;
+**Ráfordított idő: körülbelül 8 óra; pontos időmérés nem készült.**
 
-$provider = app(GitProvider::class);
-$source = $provider->getSource('laravel');
+A feladat technikai bontását és a megvalósítás irányát én terveztem meg. Az AI-t az implementációhoz, az ötleteim felülvizsgálatához és a hibák javításához használtam. A használt eszközök, a promptok, a módosított javaslatok és az ellenőrzések az [AI-használati dokumentációból](docs/AI_USAGE.md) és a [fejlesztési beszélgetésekből](docs/sessions/) követhetők. A beszélgetésekhez külön, saját megjegyzések is tartoznak.
 
-$provider->getName();       // 'GitHub'
-$provider->getKey();        // 'github'
-$provider->isValidAccountName('laravel'); // true, HTTP-kérés nélkül
-$source->getName();         // 'laravel'
-$source->getDisplayName();  // megjelenített név, hiányában a kanonikus account
-$source->getRemoteId();     // tartós upstream azonosító
-$source->getUrl();          // profil URL
-$source->getAvatarUrl();    // profilkép URL vagy null
-$source->getAccountType();  // AccountType::Organization, újabb HTTP-kérés nélkül
-$repositories = $source->getRepositories(); // list<RemoteRepository>
-```
+Következő fejlesztési irányként GitHub App- és webhook-integrációt terveznék: megfelelő jogosultsággal privát repositoryk támogatását, valamint változáskor célzott frissítést a teljes lista ismételt lekérése helyett. Az összekapcsolást egy teljes szinkron követné, hogy az addigi változások is bekerüljenek.
 
-A `getSource()` felderíti a fiókot a távoli API-ból; a provider
-`getAccountType(string $name)` metódusa önálló felderítésre használható.
-A source a létrehozó providerpéldányhoz kötött. A repository-lekérés a fiók saját
-publikus repository-jainak teljes listáját adja vissza, forkokkal és archivált
-elemekkel együtt, az összes API-oldal bevárása után. Nagy fióknál ez több
-HTTP-kérést és több memóriát igényel. A queue ezért a `getRepositoriesPage()`
-metódust használja, egyszerre legfeljebb 100 repositoryval. Külön metódus
-olvassa a friss metaadatot, a nyitott PR-ok lapját és az utolsó commit idejét;
-mindegyik legfeljebb egy HTTP-kérést végez. A válaszadatokat nem cache-eljük,
-de a GitHub által jelzett kvótavárakozást megosztjuk a források között.
-
-A közös readonly `RemoteRepository` mezői: `id`, `name`, `fullName`, `url` és
-nullable `description`. Az azonosító providerrel együtt egyedi, például
-`github:123`. A readonly `GitHubRepository` további mezői: `stars`, `forks`,
-nullable `language` és `archived`. A GitHub-provider listájának elemei
-`GitHubRepository` példányok; a közös source-on át kapott elemeknél
-`instanceof GitHubRepository` szűkíti a
-típust. Új provider a közös interface implementálásával adható hozzá; a GitHub
-névszabályai és metaadatai nem részei a közös szerződésnek.
-
-A GitHub PAT opcionális. A szerver `.env` fájljában:
-
-```dotenv
-GITHUB_PAT=
-```
-
-Nem üres értéknél minden GitHub-kérés Bearer hitelesítést használ, beleértve
-a profilfelderítést, lapozást, PR- és commit-lekéréseket. Üres vagy hiányzó
-értéknél az Authorization fejléc teljesen kimarad. A konfiguráció kulcsa
-`services.github.pat`; a token nem kerül a böngészőbe vagy a queue payloadjába.
-Hibás tokennél nincs automatikus anonim újrapróbálás. PAT mellett is kizárólag
-publikus, az adott forráshoz tartozó repositorykat szinkronizálunk.
-
-A GitHub alapértelmezett [REST-kerete](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)
-anonim kéréseknél 60 kérés/óra/IP, PAT-tal 5000 kérés/óra/felhasználó.
-A lapozási kérések külön számítanak; másodlagos korlátok is léteznek.
-A kapcsolat timeoutja 3 másodperc, az egyes kéréseké 10 másodperc,
-a rögzített API-verzió `2026-03-10`.
-
-A hibák az `App\Git\Exceptions\GitProviderException` családba tartoznak:
-`SourceNotFoundException` jelzi a 404-et, `RateLimitException` a kérési limitet
-(nullable `retryAt` időponttal), `InvalidResponseException` a hibás választ.
-`AuthenticationException` jelzi a hibás PAT-ot, `AccessDeniedException`
-a kvótakorláttól különálló hozzáférési hibát.
-A HTTP-hibaválaszok státuszát a `statusCode` mező őrzi meg. Hiba esetén nem kapunk
-üres vagy részleges repository-listát. Hibás fióknév vagy más providerpéldányhoz
-tartozó source esetén `InvalidArgumentException` keletkezik.
-
-## GitSource REST API
-
-A JSON-végpontok ugyanazon origin alatt, a Laravel `web` middleware és
-CSRF-védelem mellett érhetők el. A forráslista globális; nincs felhasználói
-tulajdon vagy új bejelentkezési folyamat.
-
-- `GET /api/git-sources?page=2`: `data` lista és `meta` objektum
-  (`current_page`, `last_page`, `per_page`, `total`). Oldalparaméter nélkül a
-  mentett cookie érvényesül. A lekérés SQL-szinten lapozott.
-- `POST /api/git-sources`: `{ "provider": "github", "account": "laravel" }`;
-  siker esetén `201` és `{ "data": ... }`. A metadata a provider válaszából jön.
-  Account és upstream ID alapján adatbázisszintű egyediség véd a duplikációtól.
-- `GET /api/git-sources/{gitSource}`: az aktuális profil és sync állapot.
-- `POST /api/git-sources/{gitSource}/sync`: `202` és `{ "data": ... }`;
-  elindítja vagy sikertelen futás után folytatja a szinkront. Aktív futásnál
-  új job nélkül visszaadja az aktuális állapotot.
-- `GET /api/git-sources/{gitSource}/repositories?page=2`: tízelemű, SQL-szinten
-  lapozott `data` és `meta`, valamint a látható sorok `fingerprint` értéke és
-  a forrás teljes nyelvválasztékát tartalmazó `languages` lista. Alaprendezés:
-  kis/nagybetűtől független név, majd external ID. A listázás és a profil
-  olvasása nem hívja a GitHubot.
-
-A repositoryk keresése és szűrése az SQL-lekérdezésben, a lapozás előtt történik:
-
-- `search=docs`: kis/nagybetűtől független részszöveges keresés a névben vagy a
-  leírásban; a `%` és `_` karakterek is szó szerint kereshetők.
-- `languages[]=PHP&languages[]=TypeScript`: a kiválasztott fő nyelvek
-  bármelyikének megfelelő repositoryk. `without_language=1` a nyelv nélküli
-  repositorykat is engedi; önmagában csak azokat mutatja. Kijelölt nyelv és
-  `without_language` nélkül nincs nyelvszűrés.
-- `sort`: `name` (alapértelmezett), `issues_count`, `pull_requests_count`,
-  `last_committed_at`, `stars_count` vagy `forks_count`.
-- `direction`: `asc` (alapértelmezett) vagy `desc`. A commit nélküli repositoryk
-  dátum szerinti rendezéskor mindkét irányban a lista végére kerülnek.
-
-A frontend minden feltételváltozást 400 ms debounce után küld el, és az első
-találati oldalra lép. GitSource-váltáskor a feltételek alaphelyzetbe állnak.
-A nyelvválasztó az adott forrás teljes mentett állományának fő nyelveit mutatja,
-kereséstől és lapozástól függetlenül; a `null` érték a „Not specified” opció.
-Több nyelv kiválasztása VAGY, a szöveg- és nyelvfeltételek összekapcsolása ÉS.
-
-A profil `GET /api/git-sources/{gitSource}?repository_page=1` lekérése ugyanezen
-szűrőparaméterekkel a `repositories` objektumban `fingerprint`, `meta` és
-`languages` adatokat is ad. A szinkronfigyelés ezeket a feltételeket követi:
-az újonnan mentett találatok üres keresési eredményből is automatikusan
-megjelennek, a nyelvválaszték pedig változatlan látható lista mellett is frissül.
-
-A lista és a szinkronfigyelés ugyanazt a szerveroldali Redis-cache-t használja.
-A kulcs tartalmazza a forrást, az aktuális sync- és repository-revíziót, a
-normalizált keresést, a nyelveket, a rendezést, annak irányát és az oldalszámot.
-A teljes nyelvválaszték külön, forrásonként kerül cache-be. Találat esetén nincs
-repository-lekérdezés; a forrás frissességének és törölt állapotának SQL-ellenőrzése
-megmarad. A szűrés cache-hiánynál továbbra is teljes egészében SQL-ben történik.
-
-A sync revízióváltásai és a repositoryk létrehozása, módosítása, törlése azonnal
-érvénytelenítik a korábbi generációt. Az SQLite triggerek ezt az adatváltozással
-azonos tranzakcióban végzik; tulajdonosváltáskor mindkét forrás érintett.
-Új cache-bejegyzés csak sikeres commit után publikálódik, a régi bejegyzések
-legfeljebb 300 másodperc után lejárnak. Redis-kieséskor a lekérdezés SQL-lel
-folytatódik, ezért a keresés és a szinkron továbbra is működik.
-
-A külön store beállításai: `REPOSITORY_CACHE_STORE` (alapérték:
-`repository-search`), `REPOSITORY_CACHE_TTL` (másodperc), `REPOSITORY_REDIS_HOST`,
-`REPOSITORY_REDIS_PORT`, opcionálisan `REPOSITORY_REDIS_USERNAME`,
-`REPOSITORY_REDIS_PASSWORD` és `REPOSITORY_REDIS_DB`. A queue által használt
-globális `CACHE_STORE=database` ettől független. A tesztek izolált `array` store-t
-használnak, ezért nem igényelnek futó Redist.
-
-A nyilvános időbélyegek Unix-másodpercek vagy `null`. A kliens a last sync
-és last commit dátumát `new Date(timestamp * 1000).toDateString()` segítségével
-formázza. A GitSource további mezői: `sync_status`, `last_sync_error_code`,
-`last_sync_error_at`, `sync_retry_at`, `sync_revision`. A belső checkpoint és
-futásazonosító nem része az API-nak.
-
-A `StoreGitSourceRequest` közös szabályait a frontend 400 ms késleltetésű
-Precognition-kéréssel használja; nincs második JavaScript-regex vagy kliensoldali
-duplikációellenőrzés. A Precognition nem ment és nem hív GitHubot. A tényleges
-létrehozás egyetlen account-lookupot végez. A provider a szigorú, mai GitHub
-névszintaxist ellenőrzi; régi és enterprise-névkivételeket nem fogad el.
-
-A `422` válasz mezőhibáiban fordítási kulcsok vannak. Működési hibánál `code`
-érkezik: rate limit `429`, hibás provider-válasz `502`, elérhetetlenség `503`,
-hibás PAT vagy tiltott hozzáférés `502`, váratlan szerverhiba `500`.
-A frontend a kulcsokat az angol szótárból jeleníti meg; tartós sync hiba a
-profil alatt látható időponttal. Ismeretlen hiba szövege `Unknown issue occurred.`
-Nyers provider-válasz, stack trace és token nem kerül a felületre. A szervernapló
-forrás- és futásazonosítót, hibakódot és biztonságos technikai kontextust őriz.
-
-## Repositoryk és folytatható szinkron
-
-Az `App\Models\RemoteRepository` Eloquent modell különbözik az azonos rövid
-nevű provider DTO-tól. Primary key az external ID, például `github:123`.
-A modell a tulajdonos GitSource-ot, nevet, leírást, fő nyelvet, archived állapotot,
-stars/forks és külön nyitott issue/PR-számot tárolja. `getUrl()` a provider
-prefixéből, a GitSource `account` mezőjéből és a repository nevéből építkezik.
-
-A `last_committed_at` a default branch legfelső commitjának committer-időpontja,
-nem a repository `updated_at` vagy `pushed_at` értéke. Üres repositorynál `null`.
-Az új repository létrejön; az ismert ID mezői frissülnek, átnevezéskor is.
-Eltűnt vagy priváttá vált repository korábbi helyi rekordja megmarad.
-Futás közbeni átnevezésnél a régi URL átirányítását nem követjük: az elemet
-átugorjuk, a következő teljes szinkron az új névvel frissíti. Repository-404
-után külön kérés ellenőrzi, hogy maga a GitSource továbbra is létezik.
-A teljesen feldolgozott repositoryk fokozatosan jelennek meg a profil alatt;
-az archiváltak sárgás keretet és szöveges jelölést kapnak.
-
-A sync állapotai: `idle`, `queued`, `syncing`, `waiting`, `succeeded`, `failed`.
-A checkpoint az SQLite adatbázisban marad, ezért kvótavárakozás vagy worker
-újraindítása után nem kell a teljes forrást újrakezdeni. Forrásonként egy futás
-aktív; az írásokat lock és revízióellenőrzés védi. A `last_synced_at` csak
-teljes siker után frissül, és csak ekkor törlődik a legutóbbi hiba.
-
-Rate limitnél a job késleltetve visszakerül a queue-ba. Átmeneti hibánál
-lépésenként legfeljebb három próbálkozás történik, 10 és 60 másodperces
-késleltetéssel. A kvótavárakozás nem fogyasztja ezt a keretet. A kézi Sync gomb
-a mentett ponttól folytatja a sikertelen futást. Nincs rendszeres automatikus
-időzítés.
-
-`composer dev` a web/Vite folyamatok mellett a queue listenert is indítja,
-60 másodperces külső process-timeouttal Windows alatt is. Külön worker:
-
-```sh
-php artisan queue:listen --tries=0 --timeout=60
-```
-
-A job timeoutja 60 másodperc, az overlap lock 75, a database queue
-`retry_after` értéke 90 másodperc. A szándékos folytatások miatt korlátlan
-attempt engedélyezett; külön hibaszámláló és crash-védelem állítja meg a
-hibás futásokat. A queue és az alkalmazás ugyanazt az SQLite-kapcsolatot
-használja az atomikus indításhoz; a tartós `database` cache szükséges a
-folyamatok közötti lockhoz és crash-védelemhez.
-
-Token vagy más szerverkonfiguráció változtatása után a konfigurációcache-t
-frissíteni kell (`php artisan config:clear` fejlesztésben, `config:cache`
-cache-elt telepítésnél), a tartós queue workereket pedig újra kell indítani.
-A mentett checkpoint eközben megmarad.
-
-A Wayfinder route-függvényeit a Vite és a `types:check` előtti lépés generálja;
-a generált könyvtárakat nem kell verziókezelni. Meglévő telepítés frissítésekor
-a függőségek telepítése után futtasd a migrációkat és a frontend buildet.
-
-A provider tesztjei hálózat nélkül, az API tesztjei külön SQLite memória-DB-vel
-futnak:
-
-```sh
-php artisan test --compact tests/Feature/Git
-php artisan test --compact --filter=GitSources
-```
+Az [eredeti feladat saját megjegyzésekkel](docs/TASK.md) és a [projektjegyzetek](docs/NOTES.md) további hátteret adnak a döntésekhez.

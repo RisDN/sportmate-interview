@@ -5,3 +5,7 @@ Az env változók között a GITHUB_PAT opcionális, csak a github ratelimitet n
 A docs/imgs/ mappában vannak képek is az oldalról.
 
 A további lényeges információk az AI_USAGE.md fájlban találhatóak, majd onnan a codex csevegések egyenkénti notes-jai.
+
+# Rászánt idő
+
+Körübelül teljesen kimaxoltam a nyolc órát. Utólag érdemesebb lett volna mérni valami toggltrack vagy clockify-al.
