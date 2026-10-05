@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "hash_algorithm": "sha256",
+  "assets": [
+    {
+      "sha256": "296ef4625b599afccc01ee0f071d363a214f02c7745cb9adf52655ef8b1ec9b9",
+      "path": "assets/296ef4625b599afccc01ee0f071d363a214f02c7745cb9adf52655ef8b1ec9b9.png",
+      "mime_type": "image/png",
+      "extension": "png",
+      "bytes": 29235,
+      "renderable": true,
+      "uses": [
+        {
+          "attachment_ordinal": 1,
+          "record_ordinal": 13,
+          "session_id": "01a0fcad-3c11-7053-9f79-eb6213b79e62",
+          "canonical_attachment_ordinal": 1,
+          "canonical_record_ordinal": 13,
+          "classification": "UNCLASSIFIED_USER_ROLE_RECORD",
+          "content_type": "input_image",
+          "mirror_kind": "",
+          "reading_disposition": "VISIBLE",
+          "record_type": "response_item/message",
+          "role": "USER",
+          "timestamp": "2026-10-02T12:53:30.326Z",
+          "tool_origin": "NONE",
+          "declared_mime": "image/png",
+          "mime_mismatch": false
+        }
+      ]
+    }
+  ]
+}

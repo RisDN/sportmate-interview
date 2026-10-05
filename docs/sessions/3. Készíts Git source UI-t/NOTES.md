@@ -1,0 +1,3 @@
+Ebben a csevegésben terveztem meg az alap ui-t, és a főbb komponenseket. Megadtam neki az ehhez biztosan releváns skilleket, eszközöket, majd mituán átbeszéltük és válaszoltam a kérdéseire, implementálta és a kérésem szerint mock adatokkal feltöltötte, tesztelte. Itt még nem kértem tőle persistent adatmentést.
+
+Szerintem az alap laraveles projektben az app.blade.php-ban maradt a default theme schema választó, ezért csinált automatikusan dark és light theme-et, szóval gondoltam ha már úgy is kész, akkor nem tart semeddig egy téma választót implementálni, amit sütiben tárol az ssr miatt és defaultból a böngésző témája.

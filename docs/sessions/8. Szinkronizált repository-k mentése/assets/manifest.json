@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "hash_algorithm": "sha256",
+  "assets": [
+    {
+      "sha256": "2e4c2f25ad81730f0c7dfb7a28ed7131a2c9d63cb3b0c925b6cdfec2c7e9267f",
+      "path": "assets/2e4c2f25ad81730f0c7dfb7a28ed7131a2c9d63cb3b0c925b6cdfec2c7e9267f.png",
+      "mime_type": "image/png",
+      "extension": "png",
+      "bytes": 27369,
+      "renderable": true,
+      "uses": [
+        {
+          "attachment_ordinal": 1,
+          "record_ordinal": 13,
+          "session_id": "01a0fc66-8bc2-76a3-8eaa-f4abdbde10d9",
+          "canonical_attachment_ordinal": 1,
+          "canonical_record_ordinal": 13,
+          "classification": "UNCLASSIFIED_USER_ROLE_RECORD",
+          "content_type": "input_image",
+          "mirror_kind": "",
+          "reading_disposition": "VISIBLE",
+          "record_type": "response_item/message",
+          "role": "USER",
+          "timestamp": "2026-10-02T11:36:17.586Z",
+          "tool_origin": "NONE",
+          "declared_mime": "image/png",
+          "mime_mismatch": false
+        },
+        {
+          "attachment_ordinal": 1,
+          "record_ordinal": 500,
+          "session_id": "01a0fc66-8bc2-76a3-8eaa-f4abdbde10d9",
+          "declared_mime": "image/png",
+          "mime_mismatch": false,
+          "canonical_attachment_ordinal": 1,
+          "canonical_record_ordinal": 13,
+          "classification": "REPLACEMENT_HISTORY_MIRROR",
+          "content_type": "input_image",
+          "mirror_kind": "REPLACEMENT_HISTORY",
+          "reading_disposition": "MIRRORED",
+          "record_type": "compacted",
+          "role": "USER",
+          "timestamp": "2026-10-02T12:04:18.862Z",
+          "tool_origin": "NONE"
+        }
+      ]
+    }
+  ]
+}

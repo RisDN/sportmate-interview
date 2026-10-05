@@ -1,0 +1,4 @@
+A bal oldali navbarban még mindig mock adatok voltak a ui implementálása óta, ezért megterveztük a gitsource-ok mentését, ami már szorosan kapcsolódik a gitprovider-es backend implementációhoz.
+A backend részét REST api-ként kértem, amit a frontend használ.
+
+Leírtam a pontos igényeimet is, kértem tőle pagination-t. Ehhez kellett pár bővítés az előző backendes taskba, hogy a gitprovider api több lehetőséget adjon. Például egy GitProvider implementációnak kell lennie egy isValidAccountName methodnak, ami egy regex check viszont platformtól függő. Itt az alap gondolat az volt, hogy gitprovider-től eltérően más-más szabályt engedhet a platform (pl tegyük fel github mondjuk enged "-" karaktert-t, de a gitlab nem). Ezt checkolja a frontend és a backend is laravel Precognition-el mielőtt a 3rd party api-hoz menne a kérés.

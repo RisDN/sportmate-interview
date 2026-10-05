@@ -1,0 +1,94 @@
+{
+  "schema_version": 2,
+  "hash_algorithm": "sha256",
+  "assets": [
+    {
+      "sha256": "9258bb39a80cd510d444abf01c038148c1c4a67dd63196ac07c88cac647e61d0",
+      "path": "assets/9258bb39a80cd510d444abf01c038148c1c4a67dd63196ac07c88cac647e61d0.png",
+      "mime_type": "image/png",
+      "extension": "png",
+      "bytes": 2665,
+      "renderable": true,
+      "uses": [
+        {
+          "attachment_ordinal": 1,
+          "record_ordinal": 477,
+          "session_id": "01a10b0e-7f08-7842-95e3-b8c7a46b121b",
+          "canonical_attachment_ordinal": 1,
+          "canonical_record_ordinal": 477,
+          "classification": "UNCLASSIFIED_USER_ROLE_RECORD",
+          "content_type": "input_image",
+          "mirror_kind": "",
+          "reading_disposition": "VISIBLE",
+          "record_type": "response_item/message",
+          "role": "USER",
+          "timestamp": "2026-10-05T08:22:54.723Z",
+          "tool_origin": "NONE",
+          "declared_mime": "image/png",
+          "mime_mismatch": false
+        },
+        {
+          "attachment_ordinal": 2,
+          "record_ordinal": 632,
+          "session_id": "01a10b0e-7f08-7842-95e3-b8c7a46b121b",
+          "declared_mime": "image/png",
+          "mime_mismatch": false,
+          "canonical_attachment_ordinal": 1,
+          "canonical_record_ordinal": 477,
+          "classification": "REPLACEMENT_HISTORY_MIRROR",
+          "content_type": "input_image",
+          "mirror_kind": "REPLACEMENT_HISTORY",
+          "reading_disposition": "MIRRORED",
+          "record_type": "compacted",
+          "role": "USER",
+          "timestamp": "2026-10-05T08:35:10.244Z",
+          "tool_origin": "NONE"
+        }
+      ]
+    },
+    {
+      "sha256": "adeecc90f70380fb97f381f273be6405a9c1597e443eca8729704bcf2a854525",
+      "path": "assets/adeecc90f70380fb97f381f273be6405a9c1597e443eca8729704bcf2a854525.png",
+      "mime_type": "image/png",
+      "extension": "png",
+      "bytes": 45430,
+      "renderable": true,
+      "uses": [
+        {
+          "attachment_ordinal": 1,
+          "record_ordinal": 13,
+          "session_id": "01a10b0e-7f08-7842-95e3-b8c7a46b121b",
+          "canonical_attachment_ordinal": 1,
+          "canonical_record_ordinal": 13,
+          "classification": "UNCLASSIFIED_USER_ROLE_RECORD",
+          "content_type": "input_image",
+          "mirror_kind": "",
+          "reading_disposition": "VISIBLE",
+          "record_type": "response_item/message",
+          "role": "USER",
+          "timestamp": "2026-10-05T07:54:25.014Z",
+          "tool_origin": "NONE",
+          "declared_mime": "image/png",
+          "mime_mismatch": false
+        },
+        {
+          "attachment_ordinal": 1,
+          "record_ordinal": 632,
+          "session_id": "01a10b0e-7f08-7842-95e3-b8c7a46b121b",
+          "declared_mime": "image/png",
+          "mime_mismatch": false,
+          "canonical_attachment_ordinal": 1,
+          "canonical_record_ordinal": 13,
+          "classification": "REPLACEMENT_HISTORY_MIRROR",
+          "content_type": "input_image",
+          "mirror_kind": "REPLACEMENT_HISTORY",
+          "reading_disposition": "MIRRORED",
+          "record_type": "compacted",
+          "role": "USER",
+          "timestamp": "2026-10-05T08:35:10.244Z",
+          "tool_origin": "NONE"
+        }
+      ]
+    }
+  ]
+}
