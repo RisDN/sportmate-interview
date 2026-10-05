@@ -95,6 +95,11 @@ function selectLanguage(language: string | null, event: Event) {
               };
 }
 
+function preserveCheckboxFocus(event: MouseEvent) {
+    // Keep label presses from focusing the main container before their click.
+    if (!(event.target instanceof HTMLInputElement)) event.preventDefault();
+}
+
 async function toggleLanguages() {
     languagesOpen.value = !languagesOpen.value;
     if (languagesOpen.value) {
@@ -121,8 +126,9 @@ function closeOutside(event: PointerEvent) {
 }
 
 function closeOnFocusLeave(event: FocusEvent) {
+    // Label clicks briefly clear focus before activating their checkbox.
     if (
-        !(event.relatedTarget instanceof Node) ||
+        event.relatedTarget instanceof Node &&
         !languageArea.value?.contains(event.relatedTarget)
     ) {
         languagesOpen.value = false;
@@ -222,18 +228,21 @@ onBeforeUnmount(() =>
                         class="max-h-64 overflow-y-auto overscroll-contain p-1.5"
                     >
                         <label
-                            v-for="language in languages"
+                            v-for="(language, index) in languages"
                             :key="language ?? 'no-language'"
-                            class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-hover"
+                            :for="`${id}-language-${index}`"
+                            class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-hover has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent has-[:focus-visible]:ring-inset"
+                            @mousedown="preserveCheckboxFocus"
                         >
                             <input
+                                :id="`${id}-language-${index}`"
                                 type="checkbox"
                                 :checked="
                                     language === null
                                         ? filters.without_language
                                         : filters.languages.includes(language)
                                 "
-                                class="focus-ring size-4 shrink-0 rounded-sm accent-accent"
+                                class="size-4 shrink-0 rounded-sm accent-accent outline-none"
                                 @change="selectLanguage(language, $event)"
                             />
                             <span class="wrap-anywhere">{{

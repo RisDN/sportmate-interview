@@ -33,6 +33,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $sync_retry_at
  * @property string|null $sync_run_id
  * @property int $sync_revision
+ * @property int $repositories_revision
  * @property array<string, mixed>|null $sync_checkpoint
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
@@ -43,9 +44,9 @@ class GitSource extends Model
     /** @use HasFactory<GitSourceFactory> */
     use HasFactory;
 
-    protected $attributes = ['sync_status' => 'idle', 'sync_revision' => 0];
+    protected $attributes = ['sync_status' => 'idle', 'sync_revision' => 0, 'repositories_revision' => 0];
 
-    protected $hidden = ['sync_run_id', 'sync_checkpoint'];
+    protected $hidden = ['sync_run_id', 'sync_checkpoint', 'repositories_revision'];
 
     /** @return Attribute<string, string> */
     protected function name(): Attribute
@@ -82,6 +83,7 @@ class GitSource extends Model
             'last_sync_error_at' => 'immutable_datetime',
             'sync_retry_at' => 'immutable_datetime',
             'sync_revision' => 'integer',
+            'repositories_revision' => 'integer',
             'sync_checkpoint' => 'array',
             'created_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',

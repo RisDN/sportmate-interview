@@ -32,7 +32,7 @@ test('source details omit repository snapshots and queries unless a page is requ
     Http::assertNothingSent();
 });
 
-test('the source snapshot matches the displayed repository page without loading other pages', function () {
+test('the source snapshot reuses the displayed repository page without querying repositories again', function () {
     $source = GitSource::factory()->create();
     RemoteRepository::factory()->count(31)->for($source, 'owner')
         ->sequence(fn (Sequence $sequence) => ['name' => sprintf('repository-%02d', $sequence->index)])
@@ -53,10 +53,7 @@ test('the source snapshot matches the displayed repository page without loading 
         'languages' => [null],
     ])->assertJsonMissingPath('repositories.data');
     expect($page->json('fingerprint'))->toBeString()->not->toBeEmpty();
-    expect($queries)->toHaveCount(3);
-    expect($queries[0])->toContain('count(*)');
-    expect($queries[1])->toContain('limit 10 offset 10');
-    expect($queries[2])->toContain('select distinct "language"');
+    expect($queries)->toBe([]);
     Http::assertNothingSent();
 });
 

@@ -179,6 +179,17 @@ return [
             'backoff_cap' => env('REDIS_BACKOFF_CAP', 1000),
         ],
 
+        'repositories' => [
+            'host' => env('REPOSITORY_REDIS_HOST', '127.0.0.1'),
+            'username' => env('REPOSITORY_REDIS_USERNAME'),
+            'password' => env('REPOSITORY_REDIS_PASSWORD'),
+            'port' => env('REPOSITORY_REDIS_PORT', 6380),
+            'database' => env('REPOSITORY_REDIS_DB', 0),
+            'timeout' => 0.2,
+            'read_timeout' => 0.2,
+            'max_retries' => 0,
+        ],
+
     ],
 
 ];

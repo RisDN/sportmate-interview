@@ -27,6 +27,16 @@ A szerver ebből állítja be a HTML témáját és az Inertia propot, így a me
 megjelenés már az első kirajzoláskor érvényes.
 
 PHP 8.5, Composer 2 és Node.js 22.18+ szükséges.
+A repository-keresések kérések között megosztott memóriacache-éhez Redis és a
+PHP `redis` bővítménye szükséges. A mellékelt Docker Compose szolgáltatás
+csak localhoston, alapértelmezetten a 6380-as porton érhető el:
+
+```sh
+docker compose up -d --wait repository-cache
+```
+
+A szolgáltatás legfeljebb 128 MB memóriát használ, lemezes perzisztencia nélkül.
+Újraindítása után a cache a következő keresésekkel töltődik fel.
 
 ```sh
 composer setup
@@ -162,6 +172,27 @@ szűrőparaméterekkel a `repositories` objektumban `fingerprint`, `meta` és
 `languages` adatokat is ad. A szinkronfigyelés ezeket a feltételeket követi:
 az újonnan mentett találatok üres keresési eredményből is automatikusan
 megjelennek, a nyelvválaszték pedig változatlan látható lista mellett is frissül.
+
+A lista és a szinkronfigyelés ugyanazt a szerveroldali Redis-cache-t használja.
+A kulcs tartalmazza a forrást, az aktuális sync- és repository-revíziót, a
+normalizált keresést, a nyelveket, a rendezést, annak irányát és az oldalszámot.
+A teljes nyelvválaszték külön, forrásonként kerül cache-be. Találat esetén nincs
+repository-lekérdezés; a forrás frissességének és törölt állapotának SQL-ellenőrzése
+megmarad. A szűrés cache-hiánynál továbbra is teljes egészében SQL-ben történik.
+
+A sync revízióváltásai és a repositoryk létrehozása, módosítása, törlése azonnal
+érvénytelenítik a korábbi generációt. Az SQLite triggerek ezt az adatváltozással
+azonos tranzakcióban végzik; tulajdonosváltáskor mindkét forrás érintett.
+Új cache-bejegyzés csak sikeres commit után publikálódik, a régi bejegyzések
+legfeljebb 300 másodperc után lejárnak. Redis-kieséskor a lekérdezés SQL-lel
+folytatódik, ezért a keresés és a szinkron továbbra is működik.
+
+A külön store beállításai: `REPOSITORY_CACHE_STORE` (alapérték:
+`repository-search`), `REPOSITORY_CACHE_TTL` (másodperc), `REPOSITORY_REDIS_HOST`,
+`REPOSITORY_REDIS_PORT`, opcionálisan `REPOSITORY_REDIS_USERNAME`,
+`REPOSITORY_REDIS_PASSWORD` és `REPOSITORY_REDIS_DB`. A queue által használt
+globális `CACHE_STORE=database` ettől független. A tesztek izolált `array` store-t
+használnak, ezért nem igényelnek futó Redist.
 
 A nyilvános időbélyegek Unix-másodpercek vagy `null`. A kliens a last sync
 és last commit dátumát `new Date(timestamp * 1000).toDateString()` segítségével
